@@ -303,7 +303,7 @@ def get_data_from_url(url):
                 
         #for i in tqdm.tqdm(range(0, len(product_list))):
         #    product_list[i]['opinion']["reviews"] =detail(product_list[i]['opinion']['link'])
-        product_lists.append(product_info)
+        product_lists.append(product_list)
         mainFlag=click_page(loopnum,driver)
         loopnum=loopnum+1
 
@@ -313,8 +313,9 @@ def get_data_from_url(url):
 def extract_name(data,fname="danawa.csv"):
     out=[]
     for d in data:
-        out.append(d["name"])
-    pd.DataFrame(out)
+        for i in d:
+            out.append(i["name"])
+    out=pd.DataFrame(out)
     out.to_csv(fname)
     return out
 if __name__ == "__main__":
