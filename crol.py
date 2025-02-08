@@ -185,13 +185,16 @@ class TapName:
  
 def detail (url,trynum=5):
     options = Options()
-    options.add_argument('--headless') 
+    #options.add_argument('--headless') 
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument("--disable-dev-shm-usage")  # ✅ `/dev/shm` 부족 문제 해결
     options.add_argument("--remote-debugging-port=9222")  # ✅ 디버깅 활성화
     driver = webdriver.Chrome(service = Service(),options=options)
     # 크롤링할 페이지 URL (실제 URL로 변경)
+    if len(url)<5:
+        print("url")
+        return ["no review"]
     driver.get("https://prod.danawa.com/"+url)
     # 동적 콘텐츠 로드를 위해 충분한 시간 대기 (WebDriverWait 사용 권장)
     WebDriverWait(driver, 5).until(lambda driver: driver.execute_script("return document.readyState") == "complete")
@@ -262,7 +265,7 @@ def click_page(page,driver,timeout=10):
 def get_data_from_url_single(url,num):
     # Selenium 옵션 설정 (headless 모드)
     options = Options()
-    options.add_argument('--headless')       # 브라우저 창 없이 실행
+    #options.add_argument('--headless')       # 브라우저 창 없이 실행
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     # ChromeDriver 실행 (경로는 환경변수에 있거나 직접 지정)
@@ -446,6 +449,21 @@ def extract_name(data,fname="danawa.csv"):
     out=pd.DataFrame(out)
     out.to_csv(fname)
     return out
+def get_data_from_url_loop(url,start,end):
+    product_lists =[]
+    # ✅ 동적으로 작업 할당
+    futures=range(start,end+1)
+    for future in tqdm.tqdm(futures, total=end - start + 1):
+        page = future
+        try:
+            #print(f"DEBUG: future 객체 = {future}")  # ✅ future가 뭔지 확인
+            data = get_data_from_url_single(url,future)  # ❌ 여기서 에러 발생 가능
+            product_lists.append(data)
+        except Exception as e:
+            #print(f"❌ 페이지 {page} 크롤링 실패: {e}")
+            data = ["get fail"]  # ✅ 예외 발생 시 기본값 설정
+            product_lists.append(data)
+    return product_lists
 
 def get_data_from_url_multi_thread(url,start,end,num_threads=8):
     product_lists = {}
@@ -501,7 +519,8 @@ def get_data_from_url_multi_thread(url,start,end,num_threads=8):
 if __name__ == "__main__":
     url = 'https://prod.danawa.com/list/?cate=22254632s'
     #data = get_data_from_url(url)
-    data = get_data_from_url_multi_thread(url,1,10)
+    #data = get_data_from_url_multi_thread(url,1,10)
+    data=get_data_from_url_loop(url,1,10)
     extract_name(data)
     save_hdf5(data, "danawa_data.h5")
 
