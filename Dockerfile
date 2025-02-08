@@ -12,20 +12,9 @@ RUN apt update && apt install -y \
     libgtk-3-0 libgbm-dev libgbm1 \
     xdg-utils jq
 
-# ✅ 4. Chrome 설치 (headless 모드, 최신 방식)
-RUN mkdir -p /etc/apt/keyrings \
-    && wget -q -O /etc/apt/keyrings/google-chrome.asc https://dl.google.com/linux/linux_signing_key.pub \
-    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main" | tee /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y google-chrome-stable
-
-# ✅ 5. Chrome WebDriver 최신 버전 다운로드 (오류 해결 버전)
-RUN apt-get install -y curl \
-    && CHROME_VERSION=$(google-chrome --version | awk '{print $NF}' | cut -d'.' -f1) \
-    && DRIVER_VERSION=$(curl -sS https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json | jq -r ".channels.Stable.version") \
-    && wget -q -O chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/${DRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
-    && unzip chromedriver.zip -d /usr/local/bin/ \
-    && rm chromedriver.zip
-
+# ✅ 4. Chrome .deb 파일 복사 및 설치
+COPY google-chrome-stable_current_amd64.deb /tmp/
+RUN dpkg -i /tmp/google-chrome-stable_current_amd64.deb || apt-get -fy install
 
 # ✅ 6. Python 패키지 설치
 COPY requirements.txt .

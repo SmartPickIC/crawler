@@ -88,10 +88,13 @@ class TapName:
         try:
             out.extend(self.oneshot())
         except:
-            html = self.driver.page_source
-            soup = BeautifulSoup(html, 'html.parser')
-            tab=WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.ID, self.front+self.opinion+self.mid+self.companyReview)))
-            tab.click()
+            try:
+                html = self.driver.page_source
+                soup = BeautifulSoup(html, 'html.parser')
+                tab=WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.ID, self.front+self.opinion+self.mid+self.companyReview)))
+                tab.click()
+            except:
+                return out.append(["no review"])
         try:
             flag=True
             n=2
@@ -104,7 +107,7 @@ class TapName:
             if out:
                 return out
             else:
-                return False
+                return out.append(["no review"])
         return out    
     @staticmethod 
     def extract_reviews_general(soup, similarity_threshold=0.7):
@@ -185,6 +188,8 @@ def detail (url,trynum=5):
     options.add_argument('--headless') 
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
+    options.add_argument("--disable-dev-shm-usage")  # ✅ `/dev/shm` 부족 문제 해결
+    options.add_argument("--remote-debugging-port=9222")  # ✅ 디버깅 활성화
     driver = webdriver.Chrome(service = Service(),options=options)
     # 크롤링할 페이지 URL (실제 URL로 변경)
     driver.get("https://prod.danawa.com/"+url)
@@ -249,50 +254,7 @@ def click_page(page,driver,timeout=10):
     except Exception as e:
         print(f"오류 발생: {e}")  # ✅ 디버깅을 위해 오류 출력
         return False  # 실패 시 False 반환
-def get_data_from_url_multi_thread(url,start,end,num_threads=8):
-    product_lists = {}
-    task_queue = Queue()
 
-    # ✅ 크롤링할 페이지를 큐에 삽입
-    for page in range(start, end + 1):
-        task_queue.put(page)
-
-    
-    with concurrent.futures.ThreadPoolExecutor(num_threads) as executor:
-        futures = {}
-
-        # ✅ 초기 스레드 실행 (최대 `num_threads` 개수만큼)
-        for _ in range(min(num_threads, task_queue.qsize())):
-            page = task_queue.get()
-            future = executor.submit(get_data_from_url_single, url, page)
-            futures[future] = page
-
-        # ✅ 동적으로 작업 할당
-        for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=end - start + 1):
-            page = futures[future]
-            try:
-                #print(f"DEBUG: future 객체 = {future}")  # ✅ future가 뭔지 확인
-                data = future.result()  # ❌ 여기서 에러 발생 가능
-                #print(f"DEBUG: future.result() = {data}")  # ✅ 여기까지 도달하면 정상 반환됨
-                product_lists[page] = data
-            except Exception as e:
-                #print(f"❌ 페이지 {page} 크롤링 실패: {e}")
-                data = ["get fail"]  # ✅ 예외 발생 시 기본값 설정
-                product_lists[page] = data
-
-           # ✅ 페이지 순서 유지하여 저장
-
-            # ✅ 새로운 작업 할당 (스레드가 하나 끝나면 새로운 페이지 크롤링)
-            if not task_queue.empty():
-                new_page = task_queue.get()
-                new_future = executor.submit(get_data_from_url_single, url, new_page)
-                futures[new_future] = new_page
-
-            # ✅ 기존 future 제거 (메모리 해제)
-            del futures[future]
-
-    # ✅ 페이지 순서대로 결과 정리
-    return [product_lists[page] for page in range(start, end + 1)]
 
 
 
@@ -384,6 +346,8 @@ def get_data_from_url(url):
     options.add_argument('--headless')       # 브라우저 창 없이 실행
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
+    options.add_argument("--disable-dev-shm-usage")  # ✅ `/dev/shm` 부족 문제 해결
+    options.add_argument("--remote-debugging-port=9222")  # ✅ 디버깅 활성화
     # ChromeDriver 실행 (경로는 환경변수에 있거나 직접 지정)
     driver = webdriver.Chrome(service = Service(),options=options)
     # 크롤링할 URL (실제 다나와 상품 목록 URL로 변경)   
@@ -481,6 +445,58 @@ def extract_name(data,fname="danawa.csv"):
 
     out=pd.DataFrame(out)
     out.to_csv(fname)
+    return out
+
+def get_data_from_url_multi_thread(url,start,end,num_threads=8):
+    product_lists = {}
+    task_queue = Queue()
+
+    # ✅ 크롤링할 페이지를 큐에 삽입
+    for page in range(start, end + 1):
+        task_queue.put(page)
+
+    
+    with concurrent.futures.ThreadPoolExecutor(num_threads) as executor:
+        futures = {}
+
+        # ✅ 초기 스레드 실행 (최대 `num_threads` 개수만큼)
+        for _ in range(min(num_threads, task_queue.qsize())):
+            page = task_queue.get()
+            future = executor.submit(get_data_from_url_single, url, page)
+            futures[future] = page
+
+        # ✅ 동적으로 작업 할당
+        for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=end - start + 1):
+            page = futures[future]
+            try:
+                #print(f"DEBUG: future 객체 = {future}")  # ✅ future가 뭔지 확인
+                data = future.result()  # ❌ 여기서 에러 발생 가능
+                #print(f"DEBUG: future.result() = {data}")  # ✅ 여기까지 도달하면 정상 반환됨
+                product_lists[page] = data
+            except Exception as e:
+                #print(f"❌ 페이지 {page} 크롤링 실패: {e}")
+                data = ["get fail"]  # ✅ 예외 발생 시 기본값 설정
+                product_lists[page] = data
+
+           # ✅ 페이지 순서 유지하여 저장
+
+            # ✅ 새로운 작업 할당 (스레드가 하나 끝나면 새로운 페이지 크롤링)
+            if not task_queue.empty():
+                new_page = task_queue.get()
+                new_future = executor.submit(get_data_from_url_single, url, new_page)
+                futures[new_future] = new_page
+
+            # ✅ 기존 future 제거 (메모리 해제)
+            del futures[future]
+
+    # ✅ 페이지 순서대로 결과 정리
+
+    for page in range(start, end + 1):
+        out=[]
+        try:
+            out.append(product_lists[page])
+        except:
+            out.append(["get fail"])
     return out
 if __name__ == "__main__":
     url = 'https://prod.danawa.com/list/?cate=22254632s'
