@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import os
+import danawa as dn
+import YTE as yt    
 
 # 페이지 설정: 제목, 레이아웃 등
 st.set_page_config(page_title="Crawler Control Panel", layout="wide")

@@ -12,6 +12,7 @@ import os
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 import argparse
+from pathlib import Path
 # Logger 클래스: 터미널 출력과 동시에 파일에도 기록
 class Logger(object):
     def __init__(self, filename):
@@ -108,6 +109,7 @@ def save_script(driver,search_query,save_path):
             save_captions(video_url,search_query,i,save_path)
             i+=1
             scrol=0
+            
         except:
             scroll_down(driver,n=10)
             scrol+=1
@@ -127,9 +129,13 @@ if __name__ == "__main__":
     save_path = os.path.join(base_dir, args.save_base, args.folder_path)
     os.makedirs(save_path, exist_ok=True)
     log_file = os.path.join(save_path, f"{search_query}.txt")
+    flag_file_path = Path(save_path+'/flag.txt')
+    flag_file_path.touch()
+    with open(flag_file_path, 'w') as f:
+        f.write("1")
     sys.stdout = Logger(log_file)
     options = Options()
-    options.add_argument('--headless')
+    #options.add_argument('--headless')
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument("--disable-dev-shm-usage")

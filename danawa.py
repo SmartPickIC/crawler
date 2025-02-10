@@ -307,7 +307,7 @@ class ProductDatabasePickleFixed:
         release_year = year_match[0] if year_match else ""
 
         # ✅ 모델 넘버 감지 (예: "11", "12.9", "S8", "M2", "M4", "6세대" 등)
-        model_numbers = extract_patterns_from_string(product_name, [r"^(S\d{1,2}|M\d{1,2}|\d+세대|\d{2,4}GB|\d{1,3}(\.\d+)?GHz|\d{1,2}A|\Ad{1,2}|폴드\d{1})$"])
+        model_numbers = extract_patterns_from_string(product_name, [r"^(S\d{1,2}|M\d{1,2}|\d+세대|\d{2,4}GB|\d{1,3}(\.\d+)?GHz|\d{1,2}A|\Ad{1,2}|폴드\d{1}|아이폰\d{1,2}|\d{1}TB)$"])
         keyword_member = extract_set_from_string(product_name, self.product_keywords)
         #[word for word in words if re.match(r"^(\d+(\.\d+)?|S\d+|M\d+|\d+세대+Air)$", word)]
         # ✅ 하드코딩된 제품 리스트와 비교하여 겹치는 단어 찾기
@@ -665,7 +665,7 @@ class TapName:
  
 def review_loop (url,trynum=5):
     options = Options()
-    options.add_argument('--headless') 
+    #options.add_argument('--headless') 
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument("--disable-dev-shm-usage")  # ✅ `/dev/shm` 부족 문제 해결
@@ -770,10 +770,10 @@ def click_page(page,driver,timeout=10):
 
 
 
-def get_data_from_url_single(url,num,save_dir_image,fail,limmiter,reviewfactor):
+def get_data_from_url_single(url,num,save_dir_image,fail,limiter,reviewfactor):
     options = Options()
     
-    #options.add_argument('--headless')      
+    options.add_argument('--headless')      
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     driver = webdriver.Chrome(service = Service(),options=options)
@@ -854,7 +854,7 @@ def get_data_from_url_single(url,num,save_dir_image,fail,limmiter,reviewfactor):
                         except:
                             product_list[i]['opinion']["reviews"] = ["no review"]
             debug+=1
-            if debug>=limmiter:
+            if debug>=limiter:
                 break       
                         
         return product_list, fail
@@ -997,16 +997,19 @@ def extract_name(data,fname="output/danawa.csv"):
     out.to_csv(fname)
     return out
 
-def get_data_from_url_loop(url,start,end,clean_itam,product_lists,save_dir_image,limmiter,reviewfactor):
+def get_data_from_url_loop(url,start,end,clean_itam,product_lists,save_dir_image,limiter,reviewfactor):
     print(clean_itam.blacklist)
     futures=range(start,end+1)
     fail=0
     for future in tqdm.tqdm(futures, total=end - start + 1):
         page = future
         try:
-            data,fail=get_data_from_url_single(url,page,save_dir_image,fail,limmiter,reviewfactor) 
+            data,fail=get_data_from_url_single(url,page,save_dir_image,fail,limiter,reviewfactor) 
             product_lists.append(data)
-            if fail>3:
+            R=None
+            with open('output/flag.txt', 'r') as f:
+                R=f.readline()
+            if (fail>3) or (R.strip() != "1"):
                 break
         except Exception as e:
             data = ["get fail"] 
@@ -1185,6 +1188,61 @@ def export_custom_csv(pickle_file, output_dir):
 
 
 
+
+def run(url="https://prod.danawa.com/list/?cate=22254631",start=1,end=11,output="output"
+        ,csv_path="output/csv",pickle_path="output/pickle"
+        ,image_path="output/images",limiter=100,reviewfacto_or=1):
+
+    limiter=args.limiter
+    
+    if (reviewfacto_or == 1): 
+        reviewfactor= True
+    else: 
+        reviewfactor= False
+    print(f"reviewfactor: {reviewfactor}")
+    # 리눅스에서는 '/'와 null 문자가 문제되지만, '/'는 반드시 치환해야 합니다.
+    # 여기에 Windows에서 문제가 될 수 있는 문자들도 함께 치환하면 호환성이 높아집니다.
+    safe_url = re.sub(r'[\\/:*?"<>|]', '_', url)
+    hashed_filename = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    csvname=hashed_filename+".csv"
+    # 안전한 경로 생성
+    save_dir_image = Path(image_path) / safe_url
+    save_dir_image.mkdir(parents=True, exist_ok=True)
+    csv_dir = Path(csv_path)
+    pickle_dir = Path(pickle_path)
+    pickle_dir.mkdir(parents=True, exist_ok=True)
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    csv_filename=csv_path+"/"+csvname
+    csv_filpath=Path(csv_filename)
+    csv_filpath.touch(exist_ok=True)  
+    file_path = Path('output/flag.txt')
+    file_path.touch()
+    
+    print(f"이미지 저장 경로: {save_dir_image}")
+    print(f"현재 워킹 디렉토리: {os.getcwd()}")
+
+    csv_raw_filename=csv_path+"/"+hashed_filename+"_raw.csv"
+    pickle_filename=pickle_path+"/"+hashed_filename+".pickle"
+    pickle_output=pickle_path+"/"+hashed_filename+"_output"+".pickle"
+
+
+    with open('output/flag.txt', 'w') as f:
+        f.write("1")
+    clean_itam=ProductDatabasePickleFixed(pickle_filename=pickle_filename, csv_filename=csv_filename)
+    
+    product_list=[]
+    
+    data =get_data_from_url_loop(url,start,end,clean_itam,product_list,save_dir_image,limiter,reviewfactor)
+    clean_itam.export_to_csv()
+    clean_itam.export_raw_data_to_csv(csv_raw_filename)
+    extract_name(data)
+    with open(pickle_output, "wb") as f:
+        pickle.dump(data, f) 
+    export_custom_csv(pickle_output, csv_path)
+
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='danawa_crawler')
     parser.add_argument('--url', type=str, default="https://prod.danawa.com/list/?cate=22254631", help='url')
@@ -1194,8 +1252,8 @@ if __name__ == "__main__":
     parser.add_argument('--csv_path', type=str, default="output/csv", help='save csv path')
     parser.add_argument('--pickle_path', type=str, default="output/pickle", help='save pickle path')
     parser.add_argument('--image_path', type=str, default="output/images", help='save image path')
-    parser.add_argument('--limmiter', type=int, default="100", help='limit for debug')
-    parser.add_argument('--reviewfactor', type=bool, default=True, help='review factor for debug')
+    parser.add_argument('--limiter', type=int, default="100", help='limit for debug')
+    parser.add_argument('--reviewfactor', type=int, default=1, help='review factor for debug1 or 0')
     args = parser.parse_args()
     url = args.url
     start = args.start
@@ -1204,8 +1262,13 @@ if __name__ == "__main__":
     csv_path = args.csv_path
     pickle_path = args.pickle_path
     image_path = args.image_path
-    limmiter=args.limmiter
-    reviewfactor=args.reviewfactor
+    limiter=args.limiter
+    
+    if (args.reviewfactor == 1): 
+        reviewfactor= True
+    else: 
+        reviewfactor= False
+    print(f"reviewfactor: {reviewfactor}")
     # 리눅스에서는 '/'와 null 문자가 문제되지만, '/'는 반드시 치환해야 합니다.
     # 여기에 Windows에서 문제가 될 수 있는 문자들도 함께 치환하면 호환성이 높아집니다.
     safe_url = re.sub(r'[\\/:*?"<>|]', '_', url)
@@ -1214,23 +1277,31 @@ if __name__ == "__main__":
     # 안전한 경로 생성
     save_dir_image = Path(image_path) / safe_url
     save_dir_image.mkdir(parents=True, exist_ok=True)
-    print(f"이미지 저장 경로: {save_dir_image}")
-    print(f"현재 워킹 디렉토리: {os.getcwd()}")
+    csv_dir = Path(csv_path)
+    pickle_dir = Path(pickle_path)
+    pickle_dir.mkdir(parents=True, exist_ok=True)
+    csv_dir.mkdir(parents=True, exist_ok=True)
     csv_filename=csv_path+"/"+csvname
-    csv_raw_filename=csv_path+"/"+hashed_filename+"_raw.csv"
-    pickle_filename=pickle_path+"/"+hashed_filename+".pickle"
-    pickle_output=pickle_path+"/"+hashed_filename+"_output"+".pickle"
     csv_filpath=Path(csv_filename)
     csv_filpath.touch(exist_ok=True)  
     file_path = Path('output/flag.txt')
     file_path.touch()
+    
+    print(f"이미지 저장 경로: {save_dir_image}")
+    print(f"현재 워킹 디렉토리: {os.getcwd()}")
+
+    csv_raw_filename=csv_path+"/"+hashed_filename+"_raw.csv"
+    pickle_filename=pickle_path+"/"+hashed_filename+".pickle"
+    pickle_output=pickle_path+"/"+hashed_filename+"_output"+".pickle"
+
+
     with open('output/flag.txt', 'w') as f:
         f.write("1")
     clean_itam=ProductDatabasePickleFixed(pickle_filename=pickle_filename, csv_filename=csv_filename)
     
     product_list=[]
     
-    data =get_data_from_url_loop(url,1,1000,clean_itam,product_list,save_dir_image,limmiter,reviewfactor)
+    data =get_data_from_url_loop(url,start,end,clean_itam,product_list,save_dir_image,limiter,reviewfactor)
     clean_itam.export_to_csv()
     clean_itam.export_raw_data_to_csv(csv_raw_filename)
     extract_name(data)
