@@ -32,6 +32,335 @@ import requests
 import csv
 import argparse
 import hashlib
+import threading
+from time import sleep
+import time
+from typing import List, Any
+import psutil
+import sys
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class ProductListManager:
+    def __init__(self, 
+                 backup_dir: str = 'backup',
+                 memory_threshold_mb: int = 500,
+                 max_items_before_dump: int = 1000,
+                 backup_interval_seconds: int = 300,
+                 max_total_size_gb: int = 20):
+        """
+        Initialize the ProductListManager.
+        
+        Args:
+            backup_dir: Directory to store pickle backups
+            memory_threshold_mb: Memory threshold in MB before forcing a dump
+            max_items_before_dump: Maximum items to hold before forcing a dump
+            backup_interval_seconds: Minimum time between backups in seconds
+            max_total_size_gb: Maximum total size of all backups in GB
+        """
+        self.product_lists = []
+        self.backup_dir = backup_dir
+        self.memory_threshold = memory_threshold_mb * 1024 * 1024  # Convert to bytes
+        self.max_items = 20  # 기본값을 20으로 설정
+        self.max_total_size = max_total_size_gb * 1024 * 1024 * 1024  # GB를 bytes로 변환
+        self.backup_interval = backup_interval_seconds
+        self.last_backup_time = time.time()
+        self.backup_counter = 0
+        
+        # Create backup directory if it doesn't exist
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Load any existing backups
+        self._load_latest_backup()
+
+    def append(self, item: Any) -> None:
+        """Add an item to the product list and handle automatic backup if needed."""
+        self.product_lists.append(item)
+        
+        # Check if we need to dump based on various conditions
+        if self._should_dump():
+            self._dump_to_pickle()
+
+    def _should_dump(self) -> bool:
+        """Check if we should dump based on memory usage, item count, and time."""
+        current_time = time.time()
+        time_since_last_backup = current_time - self.last_backup_time
+        
+        # Get current memory usage
+        process = psutil.Process(os.getpid())
+        current_memory = process.memory_info().rss
+        
+        return (
+            current_memory >= self.memory_threshold or
+            len(self.product_lists) >= self.max_items or
+            time_since_last_backup >= self.backup_interval
+        )
+
+    def _dump_to_pickle(self) -> None:
+        """Dump current product lists to a pickle file and clear memory."""
+        if not self.product_lists:
+            return
+
+        self.backup_counter += 1
+        backup_filename = os.path.join(
+            self.backup_dir, 
+            f'product_lists_backup_{self.backup_counter}.pkl'
+        )
+        
+        # Save to pickle file
+        with open(backup_filename, 'wb') as f:
+            pickle.dump(self.product_lists, f)
+        
+        # Clear the current list to free memory
+        self.product_lists = []
+        self.last_backup_time = time.time()
+
+    def _load_latest_backup(self) -> None:
+        """Load the most recent backup if it exists."""
+        backup_files = sorted([
+            f for f in os.listdir(self.backup_dir)
+            if f.startswith('product_lists_backup_') and f.endswith('.pkl')
+        ])
+        
+        if backup_files:
+            latest_backup = backup_files[-1]
+            self.backup_counter = int(latest_backup.split('_')[-1].split('.')[0])
+            
+            with open(os.path.join(self.backup_dir, latest_backup), 'rb') as f:
+                self.product_lists = pickle.load(f)
+
+    def get_all_data(self) -> List[Any]:
+        """
+        Combine all data from backups and current list.
+        Warning: This may use a lot of memory if there are many backups.
+        """
+        all_data = []
+        
+        # Load data from all backup files
+        backup_files = sorted([
+            f for f in os.listdir(self.backup_dir)
+            if f.startswith('product_lists_backup_') and f.endswith('.pkl')
+        ])
+        
+        for backup_file in backup_files:
+            with open(os.path.join(self.backup_dir, backup_file), 'rb') as f:
+                all_data.extend(pickle.load(f))
+        
+        # Add current data
+        all_data.extend(self.product_lists)
+        
+        return all_data
+
+    def get_backup_info(self) -> List[dict]:
+        """백업 파일들의 정보를 반환합니다."""
+        backup_files = sorted([
+            f for f in os.listdir(self.backup_dir)
+            if f.startswith('product_lists_backup_') and f.endswith('.pkl')
+        ])
+        
+        info_list = []
+        for backup_file in backup_files:
+            file_path = os.path.join(self.backup_dir, backup_file)
+            file_size = os.path.getsize(file_path)
+            with open(file_path, 'rb') as f:
+                data = pickle.load(f)
+                info_list.append({
+                    'filename': backup_file,
+                    'size_mb': file_size / (1024 * 1024),
+                    'items_count': len(data)
+                })
+        return info_list
+
+    def load_specific_backup(self, backup_number: int) -> List[Any]:
+        """특정 백업 파일만 로드합니다."""
+        filename = f'product_lists_backup_{backup_number}.pkl'
+        file_path = os.path.join(self.backup_dir, filename)
+        
+        if os.path.exists(file_path):
+            with open(file_path, 'rb') as f:
+                return pickle.load(f)
+        else:
+            raise FileNotFoundError(f"Backup {backup_number} not found")
+
+    def load_range(self, start_backup: int, end_backup: int) -> List[Any]:
+        """특정 범위의 백업 파일들을 로드합니다."""
+        all_data = []
+        for backup_num in range(start_backup, end_backup + 1):
+            try:
+                data = self.load_specific_backup(backup_num)
+                all_data.extend(data)
+            except FileNotFoundError:
+                continue
+        return all_data
+
+    def __len__(self) -> int:
+        """Return the total number of items across all backups and current list."""
+        total_items = len(self.product_lists)
+        
+        for backup_file in os.listdir(self.backup_dir):
+            if backup_file.startswith('product_lists_backup_') and backup_file.endswith('.pkl'):
+                with open(os.path.join(self.backup_dir, backup_file), 'rb') as f:
+                    total_items += len(pickle.load(f))
+        
+        return total_items
+
+    def __getitem__(self, index):
+        """일반 리스트처럼 인덱싱을 지원합니다."""
+        if isinstance(index, slice):
+            # 슬라이싱의 경우
+            return self.get_all_data()[index]
+        
+        # 단일 인덱스의 경우
+        if index < 0:  # 음수 인덱스 처리
+            index = len(self) + index
+            
+        # 현재 메모리의 리스트 확인
+        if index < len(self.product_lists):
+            return self.product_lists[index]
+            
+        # 백업 파일들을 순회하며 해당 인덱스 찾기
+        current_pos = len(self.product_lists)
+        backup_files = sorted([
+            f for f in os.listdir(self.backup_dir)
+            if f.startswith('product_lists_backup_') and f.endswith('.pkl')
+        ])
+        
+        for backup_file in backup_files:
+            with open(os.path.join(self.backup_dir, backup_file), 'rb') as f:
+                backup_data = pickle.load(f)
+                backup_len = len(backup_data)
+                if current_pos + backup_len > index:
+                    # 이 백업 파일에 해당 인덱스가 있음
+                    return backup_data[index - current_pos]
+                current_pos += backup_len
+                
+        raise IndexError("list index out of range")
+
+    def __del__(self):
+        """Ensure final backup on object destruction."""
+        if self.product_lists:
+            self._dump_to_pickle()
+            
+    def get_total_backup_size(self) -> float:
+        """모든 백업 파일의 총 크기를 GB 단위로 반환합니다."""
+        total_size = 0
+        for backup_file in os.listdir(self.backup_dir):
+            if backup_file.startswith('product_lists_backup_') and backup_file.endswith('.pkl'):
+                file_path = os.path.join(self.backup_dir, backup_file)
+                total_size += os.path.getsize(file_path)
+        return total_size / (1024 * 1024 * 1024)  # Convert to GB
+
+
+    def merge_and_save(self, output_path: str, chunk_size_mb: int = 1000) -> bool:
+        """
+        모든 백업 데이터를 병합하여 지정된 경로에 저장합니다.
+        
+        Args:
+            output_path: 저장할 파일 경로
+            chunk_size_mb: 청크 단위 크기 (MB)
+            
+        Returns:
+            bool: 성공 여부
+        """
+        try:
+            # 현재 메모리에 있는 데이터도 백업
+            if self.product_lists:
+                self._dump_to_pickle()
+            
+            # 총 크기 확인
+            total_size_gb = self.get_total_backup_size()
+            if total_size_gb > self.max_total_size / (1024 * 1024 * 1024):
+                print(f"경고: 총 크기({total_size_gb:.2f}GB)가 제한({self.max_total_size / (1024 * 1024 * 1024)}GB)을 초과합니다.")
+                return False
+                
+            # 모든 데이터 수집
+            all_data = []
+            backup_files = sorted([
+                f for f in os.listdir(self.backup_dir)
+                if f.startswith('product_lists_backup_') and f.endswith('.pkl')
+            ])
+            
+            # 청크 단위로 읽고 쓰기
+            chunk_size = chunk_size_mb * 1024 * 1024  # MB를 bytes로 변환
+            current_chunk = []
+            current_chunk_size = 0
+            
+            # 임시 파일들을 저장할 리스트
+            temp_files = []
+            
+            for backup_file in backup_files:
+                with open(os.path.join(self.backup_dir, backup_file), 'rb') as f:
+                    data = pickle.load(f)
+                    for item in data:
+                        current_chunk.append(item)
+                        # 대략적인 크기 추정
+                        current_chunk_size += sys.getsizeof(str(item))
+                        
+                        if current_chunk_size >= chunk_size:
+                            # 임시 파일에 청크 저장
+                            temp_file = f"{output_path}.temp{len(temp_files)}"
+                            with open(temp_file, 'wb') as tf:
+                                pickle.dump(current_chunk, tf)
+                            temp_files.append(temp_file)
+                            current_chunk = []
+                            current_chunk_size = 0
+            
+            # 마지막 청크 처리
+            if current_chunk:
+                temp_file = f"{output_path}.temp{len(temp_files)}"
+                with open(temp_file, 'wb') as tf:
+                    pickle.dump(current_chunk, tf)
+                temp_files.append(temp_file)
+            
+            # 모든 임시 파일들을 하나로 병합
+            all_data = []
+            for temp_file in temp_files:
+                with open(temp_file, 'rb') as f:
+                    all_data.extend(pickle.load(f))
+                os.remove(temp_file)  # 임시 파일 삭제
+            
+            # 최종 파일 저장
+            with open(output_path, 'wb') as f:
+                pickle.dump(all_data, f)
+            
+            return True
+            
+        except Exception as e:
+            print(f"병합 중 오류 발생: {str(e)}")
+            # 임시 파일들 정리
+            for temp_file in temp_files:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            return False
+
+
+
+
+
+
+
+
+
+
+
+
+
 class SplitTuple(tuple):
     def split(self, sep=None):
         # 튜플의 모든 요소를 문자열로 변환하고 연결
@@ -180,18 +509,98 @@ def convert_none_to_str(item):
     return "None" if item is None else item
 class ProductDatabasePickleFixed:
     def __init__(self, pickle_filename="product_database.pkl", csv_filename="product_database.csv"):
+        self._save_lock = threading.Lock()
         self.pickle_filename = pickle_filename  # ✅ Pickle 저장 파일
         self.csv_filename = csv_filename  # ✅ 배포용 CSV 저장 파일
         self.current_id = 1  # ID 초기값
         self.products = {}  # ✅ 제품명 -> ID 매핑
         self.blacklist = set()  # ✅ 블랙리스트
         self.product_keywords = set()  # ✅ 제품 리스트
-        self.company_tags = {"삼성": "삼성", "애플": "APPLE", "엘지": "LG", "LG": "LG", "APPLE": "APPLE", "Samsung": "삼성"}
+        self.company_tags = None
+        self.load_company_tags()
         self.crawl_index = 1  # ✅ 크롤링 인덱스 초기값
         self.raw_data = {}  # ✅ ID -> 원본 이름 데이터 매핑
-        
+        self.regex_release_year = None
+        self.regex_model_number = None
+        self.regex_patterns = None
+        self.load_regex_patterns()
         # ✅ Pickle 파일 로드 (없으면 기본값으로 생성)
         self.load_or_create_pickle()
+         
+        
+    
+    def load_regex_patterns(self, file_path="regex_patterns.txt", default_patterns=None):
+        """
+        txt 파일에서 정규식 패턴을 로드합니다.
+        각 줄은 "키:패턴" 형식이어야 합니다.
+        파일이 없으면 default_patterns(없으면 내부 기본값)을 사용하여 파일을 생성합니다.
+        로드한 패턴은 re.compile 후 self.regex_patterns에 저장하고,
+        'release_year'와 'model_number'는 각각 self.regex_release_year, self.regex_model_number에 할당합니다.
+        """
+        if default_patterns is None:
+            default_patterns = {
+                "release_year": r"^20[2-3][0-9]$",
+                "model_number": r"^(S\d{1,2}|M\d{1,2}|\d+세대|\d{2,4}GB|\d{1,3}(?:\.\d+)?GHz|\d{1,2}A|폴드\d{1}|아이폰\d{1,2}|\d{1}TB)$"
+            }
+        if not os.path.exists(file_path):
+            with open(file_path, "w", encoding="utf-8") as f:
+                for key, pattern in default_patterns.items():
+                    f.write(f"{key}:{pattern}\n")
+            patterns = default_patterns
+        else:
+            patterns = {}
+            with open(file_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and ":" in line:
+                        key, pattern = line.split(":", 1)
+                        patterns[key.strip()] = pattern.strip()
+        self.regex_patterns = {}
+        for key, pattern in patterns.items():
+            try:
+                self.regex_patterns[key] = re.compile(pattern)
+            except re.error as e:
+                print(f"Error compiling regex for '{key}': {pattern}. Error: {e}")
+        # 특정 패턴을 별도 변수로 할당
+        self.regex_release_year = self.regex_patterns.get("release_year", re.compile(r"^20[2-3][0-9]$"))
+        self.regex_model_number = self.regex_patterns.get("model_number", re.compile(
+            r"^(S\d{1,2}|M\d{1,2}|\d+세대|\d{2,4}GB|\d{1,3}(?:\.\d+)?GHz|\d{1,2}A|폴드\d{1}|아이폰\d{1,2}|\d{1}TB)$"
+        ))
+
+    def load_company_tags(self, file_path="company_tags.txt", default_tags=None):
+        """
+        txt 파일에서 회사 태그를 로드합니다.
+        각 줄은 "키:값" 형식이어야 합니다.
+        파일이 없으면 default_tags(없으면 내부 기본값)를 파일로 저장 후 사용합니다.
+        로드한 태그는 self.company_tags에 할당합니다.
+        """
+        if default_tags is None:
+            default_tags = {
+                "삼성": "삼성",
+                "애플": "APPLE",
+                "엘지": "LG",
+                "LG": "LG",
+                "APPLE": "APPLE",
+                "Samsung": "삼성"
+            }
+        with self._save_lock:
+            if not os.path.exists(file_path):
+                with open(file_path, "w", encoding="utf-8") as f:
+                    for key, value in default_tags.items():
+                        f.write(f"{key}:{value}\n")
+                tags = default_tags
+            else:
+                tags = {}
+                with open(file_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and ":" in line:
+                            key, value = line.split(":", 1)
+                            tags[key.strip()] = value.strip()
+        self.company_tags = tags
+    
+        
+        
     def export_raw_data_to_csv(self, file_path):
         """경로(file_path)를 입력받아 self.raw_data를 CSV 파일로 저장하는 메서드.
         
@@ -199,20 +608,21 @@ class ProductDatabasePickleFixed:
         각 행에는 product_id, index, original_name, name 항목이 포함됩니다.
         """
         import csv
-        with open(file_path, "w", newline="", encoding="utf-8") as csvfile:
-            fieldnames = ["product_id", "index", "original_name", "name"]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            for product_id, records in self.raw_data.items():
-                for record in records:
-                    # 각 record는 딕셔너리입니다. 여기에 product_id를 추가하여 한 행(row)로 만듭니다.
-                    row = {
-                        "product_id": product_id,
-                        "index": record.get("index", ""),
-                        "original_name": record.get("original_name", ""),
-                        "name": record.get("name", "")
-                    }
-                    writer.writerow(row)
+        with self._save_lock:
+            with open(file_path, "w", newline="", encoding="utf-8") as csvfile:
+                fieldnames = ["product_id", "index", "original_name", "name"]
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                for product_id, records in self.raw_data.items():
+                    for record in records:
+                        # 각 record는 딕셔너리입니다. 여기에 product_id를 추가하여 한 행(row)로 만듭니다.
+                        row = {
+                            "product_id": product_id,
+                            "index": record.get("index", ""),
+                            "original_name": record.get("original_name", ""),
+                            "name": record.get("name", "")
+                        }
+                        writer.writerow(row)
         print(f"✅ CSV 파일 `{file_path}` 저장 완료!")
     def load_or_create_pickle(self):
         hardcoded_blacklist = {
@@ -274,12 +684,13 @@ class ProductDatabasePickleFixed:
 
     def save_to_pickle(self):
         """현재 데이터를 Pickle 파일에 저장"""
-        with open(self.pickle_filename, "wb") as f:
-            pickle.dump({
-                "products": self.products,
-                "blacklist": self.blacklist,
-                "product_keywords": self.product_keywords
-            }, f)
+        with self._save_lock:
+            with open(self.pickle_filename, "wb") as f:
+                pickle.dump({
+                    "products": self.products,
+                    "blacklist": self.blacklist,
+                    "product_keywords": self.product_keywords
+                }, f)
         print(f"✅ Pickle 파일 `{self.pickle_filename}` 저장 완료!")
 
     def detect_company(self, product_name):
@@ -289,8 +700,19 @@ class ProductDatabasePickleFixed:
                 return company
         return "기타"
 
-
-
+    def export_original_name(self):
+        out=[]
+        for product_id, records in self.raw_data.items():
+            for record in records:
+                # 각 record는 딕셔너리입니다. 여기에 product_id를 추가하여 한 행(row)로 만듭니다.
+                row = {
+                    "product_id": product_id,
+                    "index": record.get("index", ""),
+                    "original_name": record.get("original_name", ""),
+                    "name": record.get("name", "")
+                }
+                out.append(row)
+        return out
     def filter_and_standardize(self, product_name):
         """불필요한 요소 제거 후, 가장 적합한 단어 순서로 정리하여 모델명을 생성"""
         original_name = convert_none_to_str(product_name)  # ✅ 원본 제품명 저장
@@ -300,14 +722,21 @@ class ProductDatabasePickleFixed:
             product_name = re.sub(r"\s+", " ", product_name).strip()
         extracted_name = extract_keywords_from_string(product_name, self.products.keys())
         words = extracted_name.split()
+        
+   
+
+        
+        
 
         # ✅ 출시 연도 감지 (예: 2022, 2023, 2024 등)
-        year_match = extract_patterns_from_string(product_name, [r"^20[2-3][0-9]$"])
+        #year_match = extract_patterns_from_string(product_name, [r"^20[2-3][0-9]$"])
+        year_match=re.match(self.regex_release_year,word)
         #[word for word in words if re.match(r"^20[2-3][0-9]$", word)]
         release_year = year_match[0] if year_match else ""
 
         # ✅ 모델 넘버 감지 (예: "11", "12.9", "S8", "M2", "M4", "6세대" 등)
-        model_numbers = extract_patterns_from_string(product_name, [r"^(S\d{1,2}|M\d{1,2}|\d+세대|\d{2,4}GB|\d{1,3}(\.\d+)?GHz|\d{1,2}A|\Ad{1,2}|폴드\d{1}|아이폰\d{1,2}|\d{1}TB)$"])
+        #model_numbers = extract_patterns_from_string(product_name, [r"^(S\d{1,2}|M\d{1,2}|\d+세대|\d{2,4}GB|\d{1,3}(\.\d+)?GHz|\d{1,2}A|\Ad{1,2}|폴드\d{1}|아이폰\d{1,2}|\d{1}TB)$"])
+        model_numbers=extract_patterns_from_string(product_name,[self.regex_model_number])
         keyword_member = extract_set_from_string(product_name, self.product_keywords)
         #[word for word in words if re.match(r"^(\d+(\.\d+)?|S\d+|M\d+|\d+세대+Air)$", word)]
         # ✅ 하드코딩된 제품 리스트와 비교하여 겹치는 단어 찾기
@@ -318,7 +747,6 @@ class ProductDatabasePickleFixed:
                 common_words_set = common_words
                 break  # ✅ 한 번이라도 겹치면 바로 사용
         # ✅ 등록되지 않은 문구도 추가로 반영
-
         # ✅ 제조사 감지 (리스트에 없으면 그대로 유지)
         detected_product = self.detect_company(original_name)
         # ✅ 가장 적합한 제품명 찾기
@@ -339,16 +767,16 @@ class ProductDatabasePickleFixed:
         common_words_set = set(total_word)
         best_match = self.match_best_product(common_words_set,original_name)
         # ✅ 최종 모델명 생성 (제조사 + 정렬된 모델명 + 모델 넘버링 + 출시 연도)
-        print(f" before join ✅ 정제된 제품명: {best_match}, 원본: {original_name}, Process Number: {self.current_id}")
+        print(f" before join ✅ 된 제품명: {best_match}, 원본: {original_name}, Process Number: {self.current_id}")
         # ✅ 기존 제품명이 존재하면 그대로 사용, 없으면 새로운 조합 생성
         standardized_name = ' '.join(best_match).strip() if best_match else f"{' '.join(common_words_set)}".strip()
 
-        print(f"✅ 정제된 제품명: {standardized_name}, 원본: {original_name}, Process Number: {self.current_id}")
+        print(f"✅ 된 제품명: {standardized_name}, 원본: {original_name}, Process Number: {self.current_id}")
         return original_name,standardized_name   # ✅ 원본, 정화된 제품명 함께 반환
 
     def add_product(self, product_name):
         """새로운 제품을 추가하면서 측정 인덱스 + 원본 제품 ID + 오염 모델명을 함께 저장"""
-        original_name, standardized_product = self.filter_and_standardize(product_name)  # ✅ 원본 & 정제된 제품명
+        original_name, standardized_product = self.filter_and_standardize(product_name)  # ✅ 원본 & 된 제품명
         
         # ✅ 기존 제품이면 기존 ID 유지 (하지만 original_name도 저장해야 함!)
         if standardized_product in self.products:
@@ -374,7 +802,6 @@ class ProductDatabasePickleFixed:
     def match_best_product(self, sorted_product,original_order):
         """
         원본 제품명(`original_order`)의 단어 순서를 유지하면서 `sorted_product`의 단어들을 재배열.
-
         :param original_order: 원본 제품명 단어 리스트
         :param sorted_product: 정렬해야 할 단어 집합 (set)
         :return: 원본 순서대로 정렬된 단어 리스트
@@ -395,35 +822,14 @@ class ProductDatabasePickleFixed:
                 remaining_string = remaining_string[1:]
             else:
                 match_found = False        
-                     
-           
-
         return matched_words
-        #best_match = None
-        #highest_score = 0
-
-        
-        
-        # ✅ 새로운 제품명의 단어를 정렬하여 비교
-        #sorted_new_product = " ".join(sorted(new_product_set))
-        
-        #for existing_product in self.products.keys():
-        #    sorted_existing_product = " ".join(sorted(existing_product.split()))
-        #    similarity = SequenceMatcher(None, sorted_new_product, sorted_existing_product).ratio()
-#
-        #    if similarity > highest_score:
-        #        highest_score = similarity
-        #        best_match = existing_product
-        #return best_match if highest_score > 0.9 else None  # ✅ 유사도가 90% 이상이면 매칭 성공
-        return sorted_product_out
-
     def export_to_csv(self):
         """현재 데이터를 CSV 파일로 저장 (배포용)"""
         import pandas as pd
         df = pd.DataFrame(self.products.items(), columns=["Standardized_Product", "ID"])
-        df.to_csv(self.csv_filename, index=False)
+        with self._save_lock:
+            df.to_csv(self.csv_filename, index=False)
         print(f"✅ CSV 파일 `{self.csv_filename}` 저장 완료!")
-
     def add_to_blacklist(self, item):
         """블랙리스트에 단어 추가"""
         self.blacklist.add(item)
@@ -663,30 +1069,114 @@ class TapName:
             return False  # 실패 시 False 반환
         return False  # 페이지 버튼이 없거나 클릭할 수 없을 경우 False
  
-def review_loop (url,trynum=5):
+def review_loop (url,product_list,save_dir_image,trynum=5):
     options = Options()
-    #options.add_argument('--headless') 
+    options.add_argument('--headless') 
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument("--disable-dev-shm-usage")  # ✅ `/dev/shm` 부족 문제 해결
     options.add_argument("--remote-debugging-port=9222")  # ✅ 디버깅 활성화
     driver = webdriver.Chrome(service = Service(),options=options)
+    
+
+    
     # 크롤링할 페이지 URL (실제 URL로 변경)
     if len(url)<5:
         print("url")
-        return ["no review"]
-    driver.get("https://prod.danawa.com/"+url)
+        print ["no review"]
+    num=0
+    loopcon=True
+    while loopcon:
+        try:
+            driver.get(url)
+            loopcon=False
+        except:
+            print("fail")
+            sleep(1)
+            num=num+1
+            if num>10:
+                print ["can't read review page_driver"]
+                return False
+    product_list["product_link"] = []
+    
+    num=0
+    loopcon=True
+    while loopcon:
+        try:
+            html = driver.page_source
+            loopcon=False
+        except:
+            print("fail")
+            sleep(1)
+            num=num+1
+            if num>20:
+                print ["can't read review page_html"]
+                return False
+    
+
+      # Selenium에서 가져온 전체 HTML
     # 동적 콘텐츠 로드를 위해 충분한 시간 대기 (WebDriverWait 사용 권장)
-    WebDriverWait(driver, 5).until(lambda driver: driver.execute_script("return document.readyState") == "complete")
+
+    num=0
+    loopcon=True
+    while loopcon:
+        try:
+            WebDriverWait(driver, 3).until(lambda driver: driver.execute_script("return document.readyState") == "complete")
+            loopcon=False
+        except:
+            print("fail")
+            sleep(1)
+            num=num+1
+            if num>10:
+                print ["can't read review page_driver_WebDriverWait1"]
+                return False
+
     # 두 개의 의견/리뷰 탭 ID 목록 (필요한 경우 두 탭 모두 의견/리뷰 범주에 해당한다고 가정)
     desired_tab_ids = {
         "danawa-prodBlog-productOpinion-button-tab-productOpinion",
         "danawa-prodBlog-productOpinion-button-tab-companyReview"
     }
-    # 현재 활성 탭의 <a> 태그 선택 (상위 탭 영역에서 활성 탭은 li 요소에 "on" 클래스가 붙어 있습니다)
-    active_tab_elements = WebDriverWait(driver, 10).until(
-        EC.presence_of_all_elements_located((By.CSS_SELECTOR, "li.tab_item"))
-    )
+    num=0
+    loopcon=True
+    while loopcon:
+        try:
+            active_tab_elements = WebDriverWait(driver, 10).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "li.tab_item"))
+            )
+            loopcon=False
+        except:
+            print("fail")
+            sleep(1)
+            num=num+1
+            if num>10:
+                print ["can't read review page"]
+            break
+
+    soup = BeautifulSoup(html, 'html.parser')
+    try:
+        affiliate_div = soup.select_one("#AffiliateMallListDiv")
+        if affiliate_div:
+            link_tags = affiliate_div.select("div > div.d_dsc > div.prc_line > a")
+            for tag in link_tags:
+                product_list["product_link"].append(tag.get("href"))
+        openmarket_div = soup.select_one("#OpenMarketMallListDiv")
+        if openmarket_div:
+            link_tags = openmarket_div.select("div > div.d_dsc > div.prc_line > a")
+            for tag in link_tags:
+                product_list["product_link"].append(tag.get("href"))
+    except:
+        print("Error can't find product market link. skip this procedure")
+    html=driver.page_source    
+    soup = BeautifulSoup(html, 'html.parser')
+    ##NEXT IMAGEFUN  save_dir_image
+    image_tag = soup.select_one("#baseImage")
+    if image_tag:
+        image_src = image_tag.get('src')
+        download_image(image_src, save_dir_image, product_list['name'])
+        product_list['image'] = {
+                'src': image_src,
+                'saved_path': os.path.join(save_dir_image, product_list['name'])
+                        }
     #driver.find_elements(By.CSS_SELECTOR, "#danawa-prodBlog-productOpinion-button-tab-productOpinion")
     for active_tab_element in active_tab_elements:
         classname = active_tab_element.get_attribute("class")
@@ -695,8 +1185,8 @@ def review_loop (url,trynum=5):
                         T=0
                         while T<trynum:
                             try:
-                                product_opinion_tab = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#danawa-prodBlog-productOpinion-button-tab-productOpinion")))
-                                product_opinion_tab.click(),
+                                product_opinion_tab = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#bookmark_cm_opinion_item > a")))
+                                driver.execute_script("arguments[0].click();", product_opinion_tab)
                                 break
                             except:
                                 T=T+1
@@ -770,7 +1260,8 @@ def click_page(page,driver,timeout=10):
 
 
 
-def get_data_from_url_single(url,num,save_dir_image,fail,limiter,reviewfactor):
+def get_data_from_url_single(url,num,save_dir_image,fail,limiter,reviewfactor,clean_itam):
+    index_i=0
     options = Options()
     
     options.add_argument('--headless')      
@@ -797,9 +1288,15 @@ def get_data_from_url_single(url,num,save_dir_image,fail,limiter,reviewfactor):
         # 여러 상품 보를 담을 리스트
         debug=0
         for prod_info_div in all_product_divs:
+            R=None
+            with open('output/flag.txt', 'r') as f:
+                R=f.readline()
+            if (R.strip() != "1"):
+                break  
             product_info = {}
             if prod_info_div:
                 # 제품명 추출: <p class="prod_name"> 내부의 <a name="productName"> 태그
+               
                 prod_name_tag = prod_info_div.find('p', class_='prod_name')
                 if prod_name_tag:
                     a_tag = prod_name_tag.find('a', attrs={"name": "productName"})
@@ -810,13 +1307,14 @@ def get_data_from_url_single(url,num,save_dir_image,fail,limiter,reviewfactor):
                     op_link_tag = prod_op_link_tag.find('a', attrs={"name": "productName"})
                     if a_tag:
                         product_info['name'] = op_link_tag.get_text(strip=True)
+                        product_info['opinion'] = {} 
+                        product_info['opinion']['link'] = op_link_tag.get('href')
                 comment_div = prod_info_div.find('div', class_='meta_item mt_comment')
                 if comment_div:
                     a_comment = comment_div.find('a')
                     if a_comment:
                         # 제품의견 관련 정보: 링크, 의견 수 등
-                        product_info['opinion'] = {} 
-                        product_info['opinion']['link'] = a_comment.get('href')
+                        product_info['opinion']['sub_link'] = a_comment.get('href')
                         strong_tag = a_comment.find('strong')
                         if strong_tag:
                             product_info['opinion']['count'] = strong_tag.get_text(strip=True)
@@ -829,15 +1327,15 @@ def get_data_from_url_single(url,num,save_dir_image,fail,limiter,reviewfactor):
                         if a:
                             text = a.get_text(strip=True)
                             spec_items.append(text)
-                ##NEXT IMAGEFUN  save_dir_image
-                image_tag = prod_info_div.find('img')
-                if image_tag:
-                    image_src = image_tag.get('src')
-                    download_image(image_src, save_dir_image, product_info['name'])
-                    product_info['image'] = {
-                            'src': image_src,
-                            'saved_path': os.path.join(save_dir_image, product_info['name'])
-                        }
+                ###NEXT IMAGEFUN  save_dir_image
+                #image_tag = prod_info_div.find('img')
+                #if image_tag:
+                #    image_src = image_tag.get('src')
+                #    download_image(image_src, save_dir_image, product_info['name'])
+                #    product_info['image'] = {
+                #            'src': image_src,
+                #            'saved_path': os.path.join(save_dir_image, product_info['name'])
+                #        }
                 price_info=extract_prod_info_list(prod_info_div)
                 #download_image(목표주소, save_dir_image, 이름)
                 product_info['price'] = price_info
@@ -847,12 +1345,14 @@ def get_data_from_url_single(url,num,save_dir_image,fail,limiter,reviewfactor):
                 clean_itam.add_product(product_info['name'])
                 product_list.append(product_info)
             if reviewfactor:    
-                for i in range(0, len(product_list)):
-                    if 'opinion' in product_list[i]:
-                        try:
-                            product_list[i]['opinion']["reviews"] =review_loop(product_list[i]['opinion']['link'])
-                        except:
-                            product_list[i]['opinion']["reviews"] = ["no review"]
+                if 'opinion' in product_list[index_i]:
+                    try:
+                        product_list[index_i]['opinion']["reviews"] =review_loop(product_list[index_i]['opinion']['link'],product_list[index_i],save_dir_image)
+                        index_i+=1
+                    except:
+                        index_i+=1
+                        product_list[index_i]['opinion']["reviews"] = ["no review"]
+                        product_list[index_i]['product_link'] = ["no link"]
             debug+=1
             if debug>=limiter:
                 break       
@@ -864,6 +1364,7 @@ def get_data_from_url_single(url,num,save_dir_image,fail,limiter,reviewfactor):
             product_list = ["get fail"]
         return product_list,fail
     finally:
+
         driver.quit()  # ✅ 예외 발생 시에도 브라우저를 안전하게 종료
 def extract_prod_info_list(soup):
     """
@@ -935,65 +1436,24 @@ def download_image(image_url, save_dir, filename=None):
     except Exception as e:
         print(f"이미지 다운로드 실패: {image_url} 에러: {e}")
 
-
-
-
-
-
-
-'''
-
-
-
-
-
-
-# HDF5 파일 열기 (읽기 모드)
-with h5py.File(h5_filename, "r") as h5f:
-    data_group = h5f["mixed_data"]
-
-    for key in data_group.keys():
-        item_group = data_group[key]
-        print(f"📦 데이터 그룹: {key}")
-
-        # 이름 불러오기
-        name = item_group.attrs["name"]
-        print(f" - 이름: {name}")
-
-        # 이미지 불러오기
-        if "image" in item_group:
-            img_data = np.array(item_group["image"])
-            print(f" - 이미지 데이터 크기: {img_data.shape}")
-
-        # 메타데이터 불러오기
-        for attr_key, attr_value in item_group.attrs.items():
-            if attr_key != "name":
-                print(f" - 메타데이터 [{attr_key}]: {attr_value}")
-
-        # 배열 불러오기
-        if "array" in item_group:
-            array_data = np.array(item_group["array"])
-            print(f" - 배열 데이터:\n{array_data}")
-
-print("✅ 복합 리스트 HDF5 불러오기 완료!")
-
-
-'''
-
-
-
-
-
-def extract_name(data,fname="output/danawa.csv"):
-    out=[]
+def extract_name(manager, fname="output/danawa.csv"):
+    out = []
+    
+    # ProductListManager의 경우 전체 데이터를 가져오기
+    data = manager.get_all_data() if hasattr(manager, 'get_all_data') else manager
+    
     for d in data:
-        if not (d[0]=='get fail'):
+        if not (d[0] == 'get fail'):
             for i in d:
-                if isinstance(i,bytes):
-                    R=ast.literal_eval(i.decode("utf-8")) 
-                    out.append(R["name"])
+                if isinstance(i, bytes):
+                    try:
+                        R = ast.literal_eval(i.decode("utf-8"))
+                        out.append(R["name"])
+                    except Exception as e:
+                        print(f"Error processing item: {e}")
+                        continue
 
-    out=pd.DataFrame(out)
+    out = pd.DataFrame(out)
     out.to_csv(fname)
     return out
 
@@ -1004,12 +1464,14 @@ def get_data_from_url_loop(url,start,end,clean_itam,product_lists,save_dir_image
     for future in tqdm.tqdm(futures, total=end - start + 1):
         page = future
         try:
-            data,fail=get_data_from_url_single(url,page,save_dir_image,fail,limiter,reviewfactor) 
+            data,fail=get_data_from_url_single(url,page,save_dir_image,fail,limiter,reviewfactor,clean_itam) 
             product_lists.append(data)
             R=None
             with open('output/flag.txt', 'r') as f:
                 R=f.readline()
-            if (fail>3) or (R.strip() != "1"):
+            if (R.strip() != "1"):
+                break  
+            if (fail>3): 
                 break
         except Exception as e:
             data = ["get fail"] 
@@ -1038,162 +1500,320 @@ def flatten_reviews(reviews):
         flat.append(reviews)
     return flat
 
-def export_custom_csv(pickle_file, output_dir):
+def split_by_product(csv_dir):
     """
-    pickle_file에 저장된 데이터를 읽어 아래 세 CSV 파일로 분리 저장:
-      1. product_table.csv: 
-         - 컬럼: 상품명, 가격1, 가격2, …, 이미지src, 제조사,  
-         - 각 가격은 "금액 (메모리 sect)" 형식
-         - 평균별점는 product['opinion']['reviews']에서 길이 2인 리스트의 두 번째 요소들을
-           모아 평균을 계산 (숫자만 추출하여 평균, 없으면 빈 문자열)
-      2. specs_table.csv:
-         - 컬럼: 제품명, 스펙1, 스펙2, …  
-      3. opinions_table.csv:
-         - 컬럼: 제품명, 의견, star  
-         - 별점(star)은 리뷰 항목이 리스트일 경우 두 번째 요소, 문자열인 경우에는 빈 문자열
+    CSV 파일들을 제품별로 분리하여 저장합니다.
+    """
+    file_types = ['opinions_table.csv', 'product_links.csv']
+    
+    for file_type in file_types:
+        input_path = os.path.join(csv_dir, file_type)
+        if not os.path.exists(input_path):
+            continue
+            
+        # CSV 파일 읽기
+        rows_by_product = {}
+        with open(input_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                cleaned_name = row['상품명']
+                if cleaned_name not in rows_by_product:
+                    rows_by_product[cleaned_name] = []
+                rows_by_product[cleaned_name].append(row)
+        
+        # 제품별로 분리하여 저장
+        output_dir = os.path.join(csv_dir, f'split_{file_type.split(".")[0]}')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        for product_name, product_rows in rows_by_product.items():
+            # 파일명에 사용할 수 없는 문자 제거
+            safe_name = "".join(c for c in product_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            safe_name = safe_name[:100]  # 파일명 길이 제한
+            
+            output_path = os.path.join(output_dir, f'{safe_name}.csv')
+            
+            with open(output_path, 'w', newline='', encoding='utf-8') as f:
+                if product_rows:
+                    writer = csv.DictWriter(f, fieldnames=product_rows[0].keys())
+                    writer.writeheader()
+                    writer.writerows(product_rows)
+def export_custom_csv(pickle_file, output_dir, name_mappings):
+    """
+    pickle_file에 저장된 데이터를 읽어 CSV 파일로 저장합니다.
+    
+    Args:
+        pickle_file: 피클 파일 경로
+        output_dir: 출력 디렉토리
+        name_mappings: original_name 매핑 정보를 포함한 리스트
+        [{
+            "product_id": "",
+            "index": "",
+            "original_name": "",
+            "name": ""
+        }, ...]
     """
     # 피클 파일 로드
     with open(pickle_file, "rb") as f:
         data = pickle.load(f)
+        
+    # name_mappings를 딕셔너리로 변환 (된 이름 -> 원본 이름)
+    name_map = {item["name"]: item["original_name"] for item in name_mappings}
     
     # 각 CSV에 저장할 행 리스트 초기화
     product_rows = []   # product_table.csv용
     specs_rows = []     # specs_table.csv용
     opinions_rows = []  # opinions_table.csv용
+    links_rows = []     # product_links.csv용
 
-    # data는 여러 페이지(리스트)의 제품 리스트로 구성되어 있다고 가정
+    # data는 여러 페이지의 제품 리스트
     all_products = []
     for page in data:
         all_products.extend(page)
     
-    # 제품별 최대 가격 개수를 확인 (가격 정보를 CSV의 컬럼 수로 사용)
-    max_price_count = 0
-    for product in all_products:
-        price_list = product.get("price", [])
-        if len(price_list) > max_price_count:
-            max_price_count = len(price_list)
-    
-    # 가격 컬럼명 생성 (예: 가격1, 가격2, …)
+    # 제품별 최대 가격 개수 확인
+    max_price_count = max(len(product.get("price", [])) for product in all_products)
     price_columns = [f"가격{i+1}" for i in range(max_price_count)]
     
     # 각 제품별로 처리
     for product in all_products:
-        name = product.get("name", "")
+        cleaned_name = product.get("name", "")
+        original_name = name_map.get(cleaned_name, cleaned_name)  # 매핑된 원본 이름 또는 된 이름
+        
         # 1. product_table.csv용 데이터 생성
         price_list = product.get("price", [])
-        prices_formatted = []
-        for price_item in price_list:
-            p_val = price_item.get("price", "")
-            mem = price_item.get("memory_sect", "")
-            prices_formatted.append(f"{p_val} ({mem})")
-        # 빈칸으로 채움
-        while len(prices_formatted) < max_price_count:
-            prices_formatted.append("")
+        prices_formatted = [
+            f"{p.get('price', '')} ({p.get('memory_sect', '')})"
+            for p in price_list
+        ]
+        prices_formatted.extend([""] * (max_price_count - len(prices_formatted)))
         
         image_src = product.get("image", {}).get("src", "")
-        manufacturer = detect_company(name)
+        manufacturer = detect_company(cleaned_name)
         
-        # 평균별점 계산: opinion['reviews']에서 길이 2인 리스트 항목의 두번째 요소를 별점으로 취급
+        # 평균별점 계산
         opinion_data = product.get("opinion", {})
         reviews = opinion_data.get("reviews", [])
         stars = []
         for review in reviews:
             if isinstance(review, list) and len(review) == 2:
                 star_str = review[1]
-                # 별점 문자열에서 숫자 부분만 추출 (예: "100점" -> "100")
                 nums = re.findall(r'\d+\.?\d*', star_str)
                 if nums:
                     try:
-                        star_val = float(nums[0])
-                        stars.append(star_val)
+                        stars.append(float(nums[0]))
                     except:
                         pass
-        if stars:
-            average_star = sum(stars) / len(stars)
-            average_star = round(average_star, 2)
-        else:
-            average_star = ""
         
-        prod_row = {"상품명": name}
+        average_star = round(sum(stars) / len(stars), 2) if stars else ""
+        
+        prod_row = {
+            "원본상품명": original_name,
+            "상품명": cleaned_name
+        }
         for idx, col in enumerate(price_columns):
             prod_row[col] = prices_formatted[idx]
-        prod_row["이미지src"] = image_src
-        prod_row["제조사"] = manufacturer
-        prod_row["평균별점"] = average_star
+        prod_row.update({
+            "이미지src": image_src,
+            "제조사": manufacturer,
+            "평균별점": average_star
+        })
         product_rows.append(prod_row)
         
         # 2. specs_table.csv용 데이터 생성
         specs = product.get("specs", [])
-        spec_row = {"제품명": name}
+        spec_row = {
+            "원본상품명": original_name,
+            "상품명": cleaned_name
+        }
         for i, spec in enumerate(specs, start=1):
             spec_row[f"스펙{i}"] = spec
         specs_rows.append(spec_row)
         
         # 3. opinions_table.csv용 데이터 생성
-        # opinion['reviews']에서 리뷰가 리스트이면, 리뷰[0]을 의견, 리뷰[1]을 star로 저장;
-        # 문자열 리뷰는 star는 빈 문자열로 처리
         for review in reviews:
             if isinstance(review, list) and len(review) == 2:
                 opinions_rows.append({
-                    "제품명": name,
+                    "원본상품명": original_name,
+                    "상품명": cleaned_name,
                     "의견": review[0],
                     "star": review[1]
                 })
             elif isinstance(review, str):
                 opinions_rows.append({
-                    "제품명": name,
+                    "원본상품명": original_name,
+                    "상품명": cleaned_name,
                     "의견": review,
                     "star": ""
                 })
+        
+        # 4. product_links.csv용 데이터 생성
+        links = product.get("product_link", [])
+        for link in links:
+            links_rows.append({
+                "원본상품명": original_name,
+                "상품명": cleaned_name,
+                "구매링크": link
+            })
     
     # 출력 디렉토리 생성
     os.makedirs(output_dir, exist_ok=True)
     
-    # 1. product_table.csv 저장
-    product_csv_path = os.path.join(output_dir, "product_table.csv")
-    product_fieldnames = ["상품명"] + price_columns + ["이미지src", "제조사", "평균별점"]
-    with open(product_csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=product_fieldnames)
-        writer.writeheader()
-        writer.writerows(product_rows)
+    # 파일들 저장
+    save_csv(os.path.join(output_dir, "product_table.csv"), product_rows,
+             ["원본상품명", "상품명"] + price_columns + ["이미지src", "제조사", "평균별점"])
     
-    # 2. specs_table.csv 저장
-    max_spec_count = 0
-    for row in specs_rows:
-        count = sum(1 for key in row if key.startswith("스펙"))
-        if count > max_spec_count:
-            max_spec_count = count
-    specs_fieldnames = ["제품명"] + [f"스펙{i}" for i in range(1, max_spec_count+1)]
-    specs_csv_path = os.path.join(output_dir, "specs_table.csv")
-    with open(specs_csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=specs_fieldnames)
+    max_spec_count = max(
+        (sum(1 for key in row if key.startswith("스펙")) for row in specs_rows),
+        default=0
+    )
+    save_csv(os.path.join(output_dir, "specs_table.csv"), specs_rows,
+             ["원본상품명", "상품명"] + [f"스펙{i}" for i in range(1, max_spec_count+1)])
+    
+    save_csv(os.path.join(output_dir, "opinions_table.csv"), opinions_rows,
+             ["원본상품명", "상품명", "의견", "star"])
+             
+    save_csv(os.path.join(output_dir, "product_links.csv"), links_rows,
+             ["원본상품명", "상품명", "구매링크"])
+    
+    # 모든 파일들을 제품별로 분리하여 저장
+    split_by_product(output_dir)
+    
+    print(f"CSV 파일들이 저장되었습니다: {output_dir}")
+
+def save_csv(filepath, rows, fieldnames):
+    """CSV 파일 저장을 위한 헬퍼 함수"""
+    with open(filepath, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        for row in specs_rows:
-            for i in range(1, max_spec_count+1):
-                key = f"스펙{i}"
-                if key not in row:
-                    row[key] = ""
+        for row in rows:
+            # 빈 필드 처리
+            for field in fieldnames:
+                if field not in row:
+                    row[field] = ""
             writer.writerow(row)
+
+
+
+
+def split_csv_by_product(input_path, output_dir, file_type='opinions', encoding='utf-8'):
+    """
+    opinions_table.csv 또는 product_links.csv를 상품별로 분할하여 저장합니다.
     
-    # 3. opinions_table.csv 저장
-    opinions_csv_path = os.path.join(output_dir, "opinions_table.csv")
-    opinions_fieldnames = ["제품명", "의견", "star"]
-    with open(opinions_csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=opinions_fieldnames)
-        writer.writeheader()
-        writer.writerows(opinions_rows)
+    Args:
+        input_path: CSV 파일 경로 또는 pickle 파일 경로
+        output_dir: 분할된 파일들을 저장할 디렉토리
+        file_type: 'opinions' 또는 'links'
+        encoding: CSV 파일 인코딩
+    """
+    # 출력 디렉토리 생성
+    split_dir = os.path.join(output_dir, f'split_{file_type}')
+    os.makedirs(split_dir, exist_ok=True)
     
-    print("CSV 파일들이 저장되었습니다:", output_dir)
+    # 데이터 로드
+    data = []
+    if input_path.endswith('.pkl'):
+        with open(input_path, 'rb') as f:
+            pickle_data = pickle.load(f)
+            # pickle 데이터를 적절한 형식으로 변환
+            if file_type == 'opinions':
+                for page in pickle_data:
+                    for product in page:
+                        original_name = product.get("original_name", "")
+                        cleaned_name = product.get("name", "")
+                        reviews = product.get("opinion", {}).get("reviews", [])
+                        for review in reviews:
+                            if isinstance(review, list) and len(review) == 2:
+                                data.append({
+                                    "원본상품명": original_name,
+                                    "상품명": cleaned_name,
+                                    "의견": review[0],
+                                    "star": review[1]
+                                })
+                            elif isinstance(review, str):
+                                data.append({
+                                    "원본상품명": original_name,
+                                    "상품명": cleaned_name,
+                                    "의견": review,
+                                    "star": ""
+                                })
+            else:  # links
+                for page in pickle_data:
+                    for product in page:
+                        original_name = product.get("original_name", "")
+                        cleaned_name = product.get("name", "")
+                        links = product.get("product_link", [])
+                        for link in links:
+                            data.append({
+                                "원본상품명": original_name,
+                                "상품명": cleaned_name,
+                                "구매링크": link
+                            })
+    else:  # CSV 파일
+        with open(input_path, 'r', encoding=encoding) as f:
+            reader = csv.DictReader(f)
+            data = list(reader)
+    
+    # 상품별로 데이터 그룹화
+    products = {}
+    for row in data:
+        key = row['상품명']  # 된 이름으로 그룹화
+        if key not in products:
+            products[key] = []
+        products[key].append(row)
+    
+    # 상품별로 파일 저장
+    for product_name, product_data in products.items():
+        # 파일명에 사용할 수 없는 문자 제거
+        safe_name = "".join(c for c in product_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        safe_name = safe_name[:100]  # 파일명 길이 제한
+        
+        output_path = os.path.join(split_dir, f'{safe_name}_{file_type}.csv')
+        
+        # 필드 이름 결정
+        fieldnames = ['원본상품명', '상품명']
+        if file_type == 'opinions':
+            fieldnames.extend(['의견', 'star'])
+        else:
+            fieldnames.append('구매링크')
+        
+        # CSV 파일로 저장
+        with open(output_path, 'w', newline='', encoding=encoding) as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(product_data)
+    
+    return split_dir
+
+def split_all_by_product(input_source, output_dir):
+    """
+    opinions와 links 데이터를 모두 상품별로 분할하여 저장합니다.
+    
+    Args:
+        input_source: pickle 파일 경로 또는 CSV 파일들이 있는 디렉토리
+        output_dir: 분할된 파일들을 저장할 디렉토리
+    """
+    if input_source.endswith('.pkl'):
+        # pickle 파일에서 직접 분할
+        split_csv_by_product(input_source, output_dir, 'opinions')
+        split_csv_by_product(input_source, output_dir, 'links')
+    else:
+        # CSV 파일들에서 분할
+        opinions_path = os.path.join(input_source, 'opinions_table.csv')
+        links_path = os.path.join(input_source, 'product_links.csv')
+        
+        if os.path.exists(opinions_path):
+            split_csv_by_product(opinions_path, output_dir, 'opinions')
+        if os.path.exists(links_path):
+            split_csv_by_product(links_path, output_dir, 'links')
+    
+    print(f"파일 분할이 완료되었습니다. 저장 위치: {output_dir}")
 
 
-
-
-
-def run(url="https://prod.danawa.com/list/?cate=22254631",start=1,end=11,output="output"
+def run(clean_itam,url="https://prod.danawa.com/list/?cate=22254632",start=1,end=11,output="output"
         ,csv_path="output/csv",pickle_path="output/pickle"
-        ,image_path="output/images",limiter=100,reviewfacto_or=1):
+        ,image_path="output/images",limiter=100,reviewfacto_or=1,reviewfactor=1):
 
-    limiter=args.limiter
+    limiter=limiter
     
     if (reviewfacto_or == 1): 
         reviewfactor= True
@@ -1228,24 +1848,28 @@ def run(url="https://prod.danawa.com/list/?cate=22254631",start=1,end=11,output=
 
     with open('output/flag.txt', 'w') as f:
         f.write("1")
-    clean_itam=ProductDatabasePickleFixed(pickle_filename=pickle_filename, csv_filename=csv_filename)
     
-    product_list=[]
+    
+    product_list=ProductListManager()
+
     
     data =get_data_from_url_loop(url,start,end,clean_itam,product_list,save_dir_image,limiter,reviewfactor)
     clean_itam.export_to_csv()
     clean_itam.export_raw_data_to_csv(csv_raw_filename)
     extract_name(data)
-    with open(pickle_output, "wb") as f:
-        pickle.dump(data, f) 
-    export_custom_csv(pickle_output, csv_path)
+    data.merge_and_save(pickle_output) 
+
+    export_custom_csv(pickle_output, csv_path,clean_itam.export_original_name())
+    return True
+   
+
 
 
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='danawa_crawler')
-    parser.add_argument('--url', type=str, default="https://prod.danawa.com/list/?cate=22254631", help='url')
+    parser.add_argument('--url', type=str, default="https://prod.danawa.com/list/?cate=22254632", help='url')
     parser.add_argument('--start', type=int, default=1, help='start page')
     parser.add_argument('--end', type=int, default=11, help='end page')
     parser.add_argument('--output', type=str, default="output", help='output directory')
@@ -1299,14 +1923,14 @@ if __name__ == "__main__":
         f.write("1")
     clean_itam=ProductDatabasePickleFixed(pickle_filename=pickle_filename, csv_filename=csv_filename)
     
-    product_list=[]
+    product_list=ProductListManager()
     
     data =get_data_from_url_loop(url,start,end,clean_itam,product_list,save_dir_image,limiter,reviewfactor)
     clean_itam.export_to_csv()
     clean_itam.export_raw_data_to_csv(csv_raw_filename)
     extract_name(data)
-    with open(pickle_output, "wb") as f:
-        pickle.dump(data, f) 
-    export_custom_csv(pickle_output, csv_path)
+    data.merge_and_save(pickle_output) 
+    export_custom_csv(pickle_output, csv_path,clean_itam.export_original_name())
+
 
     

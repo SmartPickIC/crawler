@@ -90,7 +90,7 @@ def scroll_down(driver,n=10):
 
 
 
-def save_script(driver,search_query,save_path):
+def save_script(driver,search_query,save_path,flag_file_path):
     # ✅ 부모 요소 (`ytd-rich-item-renderer:nth-child(2)`) 찾기
     i=1
     scrol=0
@@ -109,24 +109,19 @@ def save_script(driver,search_query,save_path):
             save_captions(video_url,search_query,i,save_path)
             i+=1
             scrol=0
-            
+            with open(flag_file_path, 'r') as f:
+                flag = f.readline()
+            if flag.strip() != "1":
+                break
         except:
             scroll_down(driver,n=10)
             scrol+=1
             if scrol>3:
                 break
        
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='YOUTUBE script download')
-    parser.add_argument('--search_query', type=str, default="잇섭", help='검색어 입력') 
-    parser.add_argument('--save_base', type=str, default="output/youtube", help='저장 베이스 경로')
-    args=parser.parse_args()
-    search_query = args.search_query
-    parser.add_argument('--folder_path', type=str, default=search_query, help='저장할 폴더 이름')
-    args=parser.parse_args()
+def run(search_query="잇섭",save_base="output/youtube",folder_path="잇섭"):
     base_dir = os.getcwd()
-    save_path = os.path.join(base_dir, args.save_base, args.folder_path)
+    save_path = os.path.join(base_dir, save_base, folder_path)
     os.makedirs(save_path, exist_ok=True)
     log_file = os.path.join(save_path, f"{search_query}.txt")
     flag_file_path = Path(save_path+'/flag.txt')
@@ -135,7 +130,7 @@ if __name__ == "__main__":
         f.write("1")
     sys.stdout = Logger(log_file)
     options = Options()
-    #options.add_argument('--headless')
+    options.add_argument('--headless')
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument("--disable-dev-shm-usage")
@@ -177,7 +172,81 @@ if __name__ == "__main__":
     log_file = os.path.join(save_path, f"{search_query}.txt")
     sys.stdout = Logger(log_file)
     
-    save_script(driver,search_query,save_path)
+    save_script(driver,search_query,save_path,flag_file_path)
+
+    driver.quit()
+
+
+
+
+
+
+
+
+
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='YOUTUBE script download')
+    parser.add_argument('--search_query', type=str, default="잇섭", help='검색어 입력') 
+    parser.add_argument('--save_base', type=str, default="output/youtube", help='저장 베이스 경로')
+    args=parser.parse_args()
+    search_query = args.search_query
+    parser.add_argument('--folder_path', type=str, default=search_query, help='저장할 폴더 이름')
+    args=parser.parse_args()
+    base_dir = os.getcwd()
+    save_path = os.path.join(base_dir, args.save_base, args.folder_path)
+    os.makedirs(save_path, exist_ok=True)
+    log_file = os.path.join(save_path, f"{search_query}.txt")
+    flag_file_path = Path(save_path+'/flag.txt')
+    flag_file_path.touch()
+    with open(flag_file_path, 'w') as f:
+        f.write("1")
+    sys.stdout = Logger(log_file)
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--no-sandbox')
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--remote-debugging-port=9222")
+    options.add_argument("--incognito")
+    service = Service()  
+    driver = webdriver.Chrome(service=service, options=options)
+    print("테스트 로그: 이 메시지가 파일에도 기록되어야 합니다.")
+    driver.get("https://www.youtube.com")
+    time.sleep(3)  # 페이지 로딩 대기
+
+
+    search_box = driver.find_element(By.NAME, "search_query")
+
+
+
+    search_box.send_keys(search_query)
+
+
+    search_box.send_keys(Keys.ENTER)
+
+    time.sleep(5)
+
+    move_channel = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#main-link")))
+
+    driver.execute_script("arguments[0].click();", move_channel[0])
+
+
+    move_tap = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, "#tabsContent > yt-tab-group-shape > div.yt-tab-group-shape-wiz__tabs > yt-tab-shape:nth-child(2)"))
+    )
+
+    move_tap.click()
+    # **로그 저장 설정**  
+    # save_path 폴더를 생성하고, 그 안에 search_query와 동일한 이름의 텍스트 파일을 만듭니다.
+    base_dir = os.getcwd()
+    save_path = os.path.join(base_dir, args.save_base, search_query)
+    os.makedirs(save_path, exist_ok=True)
+    log_file = os.path.join(save_path, f"{search_query}.txt")
+    sys.stdout = Logger(log_file)
+    
+    save_script(driver,search_query,save_path,flag_file_path)
 
     driver.quit()
 
