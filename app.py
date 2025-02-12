@@ -7,7 +7,7 @@ import hashlib
 from datetime import datetime
 import re
 import YTE as yt    
-
+from pathlib import Path
 # 페이지 설정: 제목, 레이아웃 등
 st.set_page_config(page_title="Crawler Control Panel", layout="wide")
 st.title("Crawler Control Panel")
@@ -81,6 +81,10 @@ if use_danawa:
         safe_url = re.sub(r'[\\/:*?"<>|]', '_', url)
         hashed_filename = hashlib.sha256(url.encode("utf-8")).hexdigest()
         csvname = hashed_filename + ".csv"
+        pickle_dir = Path(pickle_path)
+        csv_dir = Path(csv_path)
+        pickle_dir.mkdir(parents=True, exist_ok=True)
+        csv_dir.mkdir(parents=True, exist_ok=True)
         csv_filename = os.path.join(csv_path, csvname)
         pickle_filename = os.path.join(pickle_path, hashed_filename + ".pickle")
         st.session_state.clean_itam = ProductDatabasePickleFixed(
