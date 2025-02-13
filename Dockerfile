@@ -18,12 +18,14 @@ RUN apt update && apt install -y \
 
 # 6. Python 패키지 설치 전에 pip 업그레이드
 RUN pip install --upgrade pip --break-system-packages
-# 5. crawler.deb 복사 및 설치
-COPY crawler1.1.deb /tmp/
-RUN dpkg -i /tmp/crawler.deb || apt-get -fy install
+
+COPY google-chrome-stable_current_amd64.deb /tmp/
+RUN dpkg -i /tmp/google-chrome-stable_current_amd64.deb || apt-get -fy install
 
 # 6. Python 패키지 설치 (requirements.txt에 Streamlit, Selenium 등 포함)
 COPY requirements.txt .
+COPY danawa.py .
+COPY YTE.py .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 7. 스트림릿 UI 스크립트 복사 (예: app.py)
