@@ -1,0 +1,6 @@
+candidate generation
+저장해두는게 좋을듯
+비디오 분석-> stt 아니면 희망없음
+multi modal
+
+LLaVA-NeXT-Video-32B-Qwen 

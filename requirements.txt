@@ -1,0 +1,8 @@
+pytubefix
+selenium
+tqdm
+pandas
+beautifulsoup4
+requests
+streamlit
+psutil
