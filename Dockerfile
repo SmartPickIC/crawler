@@ -26,6 +26,7 @@ RUN dpkg -i /tmp/google-chrome-stable_current_amd64.deb || apt-get -fy install
 COPY requirements.txt .
 COPY danawa.py .
 COPY controller.py .
+COPY YTref.txt .
 COPY YTE.py .
 RUN pip install --no-cache-dir -r requirements.txt
 

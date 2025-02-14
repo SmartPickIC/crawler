@@ -5,9 +5,64 @@ from danawa import ProductDatabasePickleFixed, run
 import hashlib
 #from datetime import datetime
 import re
-import YTE as yt    
+import YTE as yt   
 from pathlib import Path
+import time
+class YTcontroller:
+    def __init__(self,save_base="output/youtube"):
+        self.status = "Idle"
+        self.save_base = save_base
+        self.thread = None
+        self.nowrun=None
+        self.base_dir = os.getcwd()
+        self.flag_file_path = Path(self.base_dir+"/"+self.save_base)
+        print (f"플래그 경로 IN control{self.flag_file_path}")
+        self.flag_file_path.mkdir(parents=True, exist_ok=True)
+        self.flag_file_path = Path( str(self.flag_file_path)  +"/flag.txt")
+        with open("YTref.txt", "r", encoding="utf-8") as file:
+            names = [line.strip() for line in file if line.strip()]
+        self.search_querys = names
+    def is_youtube_running(self):
+        if self.status == "Running":
+            return True
+        else:
+            return False
 
+    def is_thread_running(self):
+        """ ✅ 현재 스레드가 실행 중인지 확인 """
+        return self.thread is not None and self.thread.is_alive()
+    
+    def run_threaded_youtube(self):
+        """ ✅ 멀티스레드로 크롤링 실행 """
+        if self.thread and self.thread.is_alive():
+            print("⚠️ 이미 실행 중입니다. 새 작업을 시작할 수 없습니다.")
+            return False  # 이미 실행 중이면 실행하지 않음
+        self.thread = threading.Thread(target=self.run_youtube)
+        self.thread.start()
+        print(f"✅ 크롤링 스레드 시작")
+        return True
+    def stop_threaded_danawa(self):
+        """ ✅ 멀티스레드 크롤링 중지 요청 (flag.txt 변경) """
+        with open(self.flag_file_path, "w") as f:
+            f.write("0")
+    
+    def run_youtube(self):
+        self.status = "Running"
+        for search_query in self.search_querys:
+            print(f"✅ 크롤링 유튜버 : {search_query}")
+            yt.run(search_query, self.save_base,self.base_dir)
+            with open(self.flag_file_path, "r") as f:
+                flag = f.read().strip()
+            if flag != "1":
+                print("⛔ 크롤링 중지 요청됨")
+                self.status = "Idle"
+                return True
+        self.status = "Idle"
+        return True
+    
+
+
+        
 class Danawacontroller:
     def __init__(self, url, start, end, output, limiter, reviewfactor):
         self.thread = None
@@ -55,7 +110,6 @@ class Danawacontroller:
             print("⚠️ 이미 실행 중입니다. 새 작업을 시작할 수 없습니다.")
             self.crawling_status = "⚠️ 이미 실행 중입니다. 새 작업을 시작할 수 없습니다."
             return False  # 이미 실행 중이면 실행하지 않음
-        
         self.thread = threading.Thread(target=self.run_danawa)
         self.thread.start()
         print(f"✅ 크롤링 스레드 시작: {self.url}")
@@ -143,3 +197,39 @@ class Danawacontroller:
         return products_df
 
    
+   
+
+
+class CrawlerStateManager:
+    def __init__(self):
+        self.danawa_state = "IDLE"  # 상태: "IDLE" 또는 "RUNNING"
+        self.youtube_state = "IDLE"
+        self.rerun_state = 1
+
+    def start_danawa(self):
+        """ 다나와 크롤링 시작 시 상태 변경 """
+        self.danawa_state = "RUNNING"
+
+    def stop_danawa(self, controller):
+        """ 다나와 크롤링 종료 요청 후 실제 종료되었는지 확인 """
+        controller.stop_threaded_danawa()
+        while controller.is_thread_running():  # ✅ 실제 크롤링이 중지될 때까지 대기
+            time.sleep(0.5)
+        self.danawa_state = "IDLE"  # ✅ 중지 확인 후 상태 변경
+
+    def start_youtube(self):
+        """ 유튜브 크롤링 시작 시 상태 변경 """
+        self.youtube_state = "RUNNING"
+
+    def stop_youtube(self, controller):
+        """ 유튜브 크롤링 종료 요청 후 실제 종료되었는지 확인 """
+        controller.stop_threaded_danawa()
+        while controller.is_youtube_running():  # ✅ 실제 크롤링이 중지될 때까지 대기
+            time.sleep(0.5)
+        self.youtube_state = "IDLE"  # ✅ 중지 확인 후 상태 변경
+
+    def is_danawa_running(self):
+        return self.danawa_state == "RUNNING"
+
+    def is_youtube_running(self):
+        return self.youtube_state == "RUNNING"

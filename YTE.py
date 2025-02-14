@@ -129,10 +129,10 @@ class YouTubelistManager(ProductListManager):
             chunk_size = chunk_size_mb * 1024 * 1024  # MB를 bytes로 변환
             current_chunk = []
             current_chunk_size = 0
-            
+
             # 임시 파일들을 저장할 리스트
             temp_files = []
-            
+
             for backup_file in backup_files:
                 with open(os.path.join(self.backup_dir, backup_file), 'rb') as f:
                     data = pickle.load(f)
@@ -140,7 +140,7 @@ class YouTubelistManager(ProductListManager):
                         current_chunk.append(item)
                         # 대략적인 크기 추정
                         current_chunk_size += sys.getsizeof(str(item))
-                        
+
                         if current_chunk_size >= chunk_size:
                             # 임시 파일에 청크 저장
                             temp_file = f"{output_path}.temp{len(temp_files)}"
@@ -149,21 +149,21 @@ class YouTubelistManager(ProductListManager):
                             temp_files.append(temp_file)
                             current_chunk = []
                             current_chunk_size = 0
-            
+
             # 마지막 청크 처리
             if current_chunk:
                 temp_file = f"{output_path}.temp{len(temp_files)}"
                 with open(temp_file, 'wb') as tf:
                     pickle.dump(current_chunk, tf)
                 temp_files.append(temp_file)
-            
+
             # 모든 임시 파일들을 하나로 병합
             all_data = []
             for temp_file in temp_files:
                 with open(temp_file, 'rb') as f:
                     all_data.extend(pickle.load(f))
                 os.remove(temp_file)  # 임시 파일 삭제
-            
+
             # 최종 파일 저장
             with open(output_path, 'wb') as f:
                 pickle.dump(all_data, f)
@@ -181,7 +181,7 @@ class YouTubelistManager(ProductListManager):
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
             return False
-        
+
 class Logger(object):
     def __init__(self, filename):
         self.terminal = sys.stdout  # 원래 stdout 저장
@@ -196,7 +196,6 @@ class Logger(object):
 def save_captions(link,search_query,i,save_path):
         # ✅ 현재 작업 디렉토리 가져오기
     base_dir = os.getcwd()
-    
     # ✅ 디렉토리 확인 및 생성
     os.makedirs(save_path, exist_ok=True)
     #link = input("자막을 다운로드할 영상 링크를 입력하세요: ")
@@ -204,7 +203,6 @@ def save_captions(link,search_query,i,save_path):
     filename = f"{i}.mp3"
     download_path = yt.streams.filter(only_audio=True).first().download(output_path=save_path, filename=filename)
     # 사용 가능한 자막 목록 출력
-
     # 원하는 자막 언어 코드 입력 (예: 'en' 또는 'ko')
     #language_code = input("다운로드할 자막의 언어 코드를 입력하세요 (예: en, ko): ")
     try:
@@ -221,7 +219,6 @@ def save_captions(link,search_query,i,save_path):
             print(f"자막이 '{filename}' 파일로 저장되었습니다.")
         else:
             print("입력한 언어 코드에 해당하는 자막이 존재하지 않습니다.")
-
         lines = srt_captions.splitlines()
         text_lines = []
         for line in lines:
@@ -243,9 +240,6 @@ def save_captions(link,search_query,i,save_path):
     except:
         print("자막이 없습니다.")
 
-
-
-
 def scroll_down(driver,n=10):
     body = driver.find_element(By.TAG_NAME, "body")
     body.send_keys(Keys.PAGE_DOWN)
@@ -255,7 +249,7 @@ def scroll_down(driver,n=10):
 
 def get_metadata(link):
     options1 = Options()
-    #options1.add_argument('--headless')
+    options1.add_argument('--headless')
     options1.add_argument('--disable-gpu')
     options1.add_argument('--no-sandbox')
     options1.add_argument("--disable-dev-shm-usage")
@@ -264,46 +258,40 @@ def get_metadata(link):
     service = Service()
     driver = webdriver.Chrome(service=service, options=options1)
     driver.get(link)
-    
     loop_extend=True
     loop_num=0
     loop_max=20
     while loop_extend:
         try:
-            expand = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#expand")))
+
+
+            expand = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#description-inline-expander> #expand")))
+            
             if isinstance(expand,list):
-                expand[0].click()
-                break
+                driver.execute_script("arguments[0].click();", expand[0])
+                elements = driver.find_elements(By.CSS_SELECTOR, "#description-inline-expander > yt-attributed-string > span > span")
+                if len(elements)>0:
+                    combined_text = " ".join([elem.text for elem in elements])
+                    driver.quit()
+                    return combined_text
+                else:
+                    continue
             else:
-                expand.click()
-                break
+                driver.execute_script("arguments[0].click();", expand)
+                if len(elements)>0:
+                    combined_text = " ".join([elem.text for elem in elements])
+                    driver.quit()
+                    return combined_text
+                else:
+                    continue
         except:
             loop_num+=1
             time.sleep(1)
             if loop_num>loop_max:
                 print("fail click expand")
-                driver.quit()
-                return "fail click expand"
-    loop_elem=True
-    loop_num_elem=0
-    loop_max_elem=20
-    while loop_elem:
-        try:
-            elements = driver.find_elements(By.CSS_SELECTOR, "#description-inline-expander > yt-attributed-string > span > span")
-            combined_text = " ".join([elem.text for elem in elements])
-            return combined_text
-        except:
-            loop_num_elem+=1
-            time.sleep(1)
-            if loop_num_elem>loop_max_elem:
-                print("fail get elements")
-                return "fail get elements"
-        finally:
-            driver.quit()
-                   
-            
-            
+    driver.quit()
 
+   
 
 
 def automatic_retry(selector, driver, by=By.CSS_SELECTOR, attempts=10):
@@ -327,11 +315,9 @@ def automatic_retry(selector, driver, by=By.CSS_SELECTOR, attempts=10):
 def save_script(driver,search_query,save_path,flag_file_path,data):
     # ✅ 부모 요소 (`ytd-rich-item-renderer:nth-child(2)`) 찾기
     i=1
-    scrol=0
-    
+    scrol=0 
     while True:
         try:
-
             loopdata={}
             css_selector = f"#contents > ytd-rich-item-renderer:nth-child({i})"
             parent_element = WebDriverWait(driver, 10).until(
@@ -377,12 +363,15 @@ def save_script(driver,search_query,save_path,flag_file_path,data):
             if scrol>3:
                 break
        
-def run(search_query="잇섭",save_base="output/youtube",folder_path="잇섭"):
-    base_dir = os.getcwd()
+def run(search_query,save_base,base_dir):
+    folder_path=search_query
     save_path = os.path.join(base_dir, save_base, folder_path)
     os.makedirs(save_path, exist_ok=True)
     log_file = os.path.join(save_path, f"{search_query}.txt")
-    flag_file_path = Path(save_path+'/flag.txt')
+    flag_file_path = Path(base_dir+"/"+save_base)
+    print (f"플래그 경로 IN YT{flag_file_path}")
+    flag_file_path.mkdir(parents=True, exist_ok=True)
+    flag_file_path = Path(str(flag_file_path)+'/flag.txt')
     flag_file_path.touch()
     csv_path = Path(save_path+'/csv')
     csv_path.mkdir(parents=True, exist_ok=True)
@@ -406,10 +395,7 @@ def run(search_query="잇섭",save_base="output/youtube",folder_path="잇섭"):
     print("테스트 로그: 이 메시지가 파일에도 기록되어야 합니다.")
     driver.get("https://www.youtube.com")
     time.sleep(3)  # 페이지 로딩 대기
-
-
     search_box = driver.find_element(By.NAME, "search_query")
-
     search_box.send_keys(search_query)
     search_box.send_keys(Keys.ENTER)
     time.sleep(5)
@@ -432,19 +418,10 @@ def run(search_query="잇섭",save_base="output/youtube",folder_path="잇섭"):
     csv_file = str(csv_path) + "/" + str(hashed_filename) + ".csv"
     data.merge_and_save_you(murged_pickle)
     export_pickle_to_csv(murged_pickle, csv_file)
-
+    
 
 if __name__ == "__main__":
-    run()
+    save_base="output/youtube"
+    search_query="디에이트"
+    run(search_query,save_base)
     print("정상 종료")
-
-
-
-
-
-
-
-
-
-
-

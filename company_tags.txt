@@ -1,0 +1,6 @@
+삼성:삼성
+애플:APPLE
+엘지:LG
+LG:LG
+APPLE:APPLE
+Samsung:삼성

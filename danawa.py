@@ -38,25 +38,6 @@ import time
 from typing import List, Any
 import psutil
 import sys
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class ProductListManager:
     def __init__(self, 
                  backup_dir: str = 'backup',
@@ -559,7 +540,7 @@ class ProductDatabasePickleFixed:
         # 특정 패턴을 별도 변수로 할당
         self.regex_release_year = self.regex_patterns.get("release_year", re.compile(r"^20[2-3][0-9]$"))
         self.regex_model_number = self.regex_patterns.get("model_number", re.compile(
-            r"^(S\d{1,2}|M\d{1,2}|\d+세대|\d{2,4}GB|\d{1,3}(?:\.\d+)?GHz|\d{1,2}A|폴드\d{1}|아이폰\d{1,2}|\d{1}TB)$"
+            r"^(S\d{1,2}|M\d{1,2}|\d+세대|\d{2,4}GB|\d{1,3}(?:\.\d+)?GHz|\d{1,2}A|폴드\d{1}|아이폰\d{1,2}|\d{1}TB|패드\d{1,2}|\d{1,2}\.\d{1})$"
         ))
 
     def load_company_tags(self, file_path="company_tags.txt", default_tags=None):
@@ -628,7 +609,7 @@ class ProductDatabasePickleFixed:
         hardcoded_product_keywords = {
         "iPad", "갤럭시탭", "갤럭시Z","Surface", "G패드", "Yoga", "Xperia", "MatePad","갤럭시","울트라","플립","폴드"
         "냉장고", "세탁기", "TV", "오븐", "전자레인지", "에어컨", "공기청정기", "iPhone","아이폰","맥북","맥미니","맥북에어","맥북프로",
-        "청소기", "스피커", "모니터", "M1", "M2", "M3", "M4", "M5", "mini", "Air","플러스"
+        "청소기", "스피커", "모니터", "M1", "M2", "M3", "M4", "M5", "mini", "Air","플러스","요가","레노버","Pad","AI","샤오미","미","패드","프로"
         }
         hardcoded_product = {
             "APPLE 2021 iPad Pro 11 3세대": 1,
@@ -717,11 +698,7 @@ class ProductDatabasePickleFixed:
             product_name = re.sub(r"\s+", " ", product_name).strip()
         extracted_name = extract_keywords_from_string(product_name, self.products.keys())
         words = extracted_name.split()
-        
-   
 
-        
-        
 
         # ✅ 출시 연도 감지 (예: 2022, 2023, 2024 등)
         #year_match = extract_patterns_from_string(product_name, [r"^20[2-3][0-9]$"])
@@ -1859,77 +1836,6 @@ def run(clean_item,url="https://prod.danawa.com/list/?cate=22254632",start=1,end
 
     export_custom_csv(pickle_output, csv_path,clean_item.export_original_name())
     return True
-   
-
-
-
-
-
+ 
 if __name__ == "__main__":
-    #parser = argparse.ArgumentParser(description='danawa_crawler')
-    #parser.add_argument('--url', type=str, default="https://prod.danawa.com/list/?cate=22254632", help='url')
-    #parser.add_argument('--start', type=int, default=1, help='start page')
-    #parser.add_argument('--end', type=int, default=11, help='end page')
-    #parser.add_argument('--output', type=str, default="output", help='output directory')
-    #parser.add_argument('--csv_path', type=str, default="output/csv", help='save csv path')
-    #parser.add_argument('--pickle_path', type=str, default="output/pickle", help='save pickle path')
-    #parser.add_argument('--image_path', type=str, default="output/images", help='save image path')
-    #parser.add_argument('--limiter', type=int, default="100", help='limit for debug')
-    #parser.add_argument('--reviewfactor', type=int, default=1, help='review factor for debug1 or 0')
-    #args = parser.parse_args()
-    #url = args.url
-    #start = args.start
-    #end = args.end
-    #output = args.output
-    #csv_path = args.csv_path
-    #pickle_path = args.pickle_path
-    #image_path = args.image_path
-    #limiter=args.limiter
-    #
-    #if (args.reviewfactor == 1): 
-    #    reviewfactor= True
-    #else: 
-    #    reviewfactor= False
-    #print(f"reviewfactor: {reviewfactor}")
-    ## 리눅스에서는 '/'와 null 문자가 문제되지만, '/'는 반드시 치환해야 합니다.
-    ## 여기에 Windows에서 문제가 될 수 있는 문자들도 함께 치환하면 호환성이 높아집니다.
-    #safe_url = re.sub(r'[\\/:*?"<>|]', '_', url)
-    #hashed_filename = hashlib.sha256(url.encode("utf-8")).hexdigest()
-    #csvname=hashed_filename+".csv"
-    ## 안전한 경로 생성
-    #save_dir_image = Path(image_path) / safe_url
-    #save_dir_image.mkdir(parents=True, exist_ok=True)
-    #csv_dir = Path(csv_path)
-    #pickle_dir = Path(pickle_path)
-    #pickle_dir.mkdir(parents=True, exist_ok=True)
-    #csv_dir.mkdir(parents=True, exist_ok=True)
-    #csv_filename=csv_path+"/"+csvname
-    #csv_filpath=Path(csv_filename)
-    #csv_filpath.touch(exist_ok=True)  
-    #file_path = Path('output/flag.txt')
-    #file_path.touch()
-    #
-    #print(f"이미지 저장 경로: {save_dir_image}")
-    #print(f"현재 워킹 디렉토리: {os.getcwd()}")
-#
-    #csv_raw_filename=csv_path+"/"+hashed_filename+"_raw.csv"
-    #pickle_filename=pickle_path+"/"+hashed_filename+".pickle"
-    #pickle_output=pickle_path+"/"+hashed_filename+"_output"+".pickle"
-#
-#
-    #with open('output/flag.txt', 'w') as f:
-    #    f.write("1")
-    #clean_item=ProductDatabasePickleFixed(pickle_filename=pickle_filename, csv_filename=csv_filename)
-    #
-    #product_list=ProductListManager()
-    #
-    #data =get_data_from_url_loop(url,start,end,clean_item,product_list,save_dir_image,limiter,reviewfactor)
-    #clean_item.export_to_csv()
-    #clean_item.export_raw_data_to_csv(csv_raw_filename)
-    #extract_name(data)
-    #data.merge_and_save(pickle_output) 
-    #export_custom_csv(pickle_output, csv_path,clean_item.export_original_name())
-    export_custom_csv('93946765c00f197b7e33e34f8d8307718855e5e36ab559cdbfbb260699dc845e_output.pickle', '.',[])
-
-
-    
+    run()
