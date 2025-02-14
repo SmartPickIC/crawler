@@ -946,6 +946,11 @@ class TapName:
                                 attrs={"data-seq": "N"}
                             )
                             if parent_div:
+                                for i in parent_div:
+                                    if isinstance(i, str):
+                                        filtered_elems.append(i.replace("\n", "").replace("\t", ""))
+                                    else:
+                                        filtered_elems.extend(i.text.replace("\n", "").replace("\t", ""))
                                 filtered_elems.extend(parent_div)
             # 각 리뷰 요소에서 텍스트(및 별점) 추출
             for felem in filtered_elems:
@@ -955,44 +960,34 @@ class TapName:
                     if text_elements:
                         for elem in text_elements:
                             if hasattr(elem, "get_text"):
-                                cleaned = " ".join(set(elem.get_text(separator=' ', strip=True).split()))
+                                cleaned=elem.get_text()
                             else:
-                                cleaned = " ".join(set(str(elem).split()))
+                                cleaned = str(elem)
+                                    #if hasattr(elem, "get_text"):
+                                    #    cleaned = " ".join(set(elem.get_text(separator=' ', strip=True).split()))
+                                    #else:
+                                    #    cleaned = " ".join(set(str(elem).split()))
                             if cleaned:
                                 # 별점이 있으면 리스트 형태로 추가
                                 if star and len(star) > 0:
                                     reviews.append([cleaned, star[0].get_text(strip=True)])
                                 else:
                                     reviews.append(cleaned)
-                if text_elements:
-                    for elem in text_elements:
-                        if hasattr(elem, "get_text"):
-                            cleaned = " ".join(set(elem.get_text(separator=' ', strip=True).split()))
-                        else:
-                            cleaned = " ".join(set(str(elem).split()))
-                        if cleaned:
-                            reviews.append(cleaned)
-                else:
-                    if hasattr(felem, "get_text"):
-                        cleaned = " ".join(set(felem.get_text(separator=' ', strip=True).split()))
-                    else:
-                        cleaned = " ".join(set(str(felem).split()))
-                    if cleaned:
-                        reviews.append(cleaned)
+
             # 중복 제거 (Jaccard 유사도 기준)
-            unique_reviews = []
-            for review in reviews:
-                is_duplicate = False
-                for unique_review in unique_reviews:
-                    if jaccard_similarity(review, unique_review) > similarity_threshold:
-                        is_duplicate = True
-                        break
-                if not is_duplicate:
-                    unique_reviews.append(review)
-            return unique_reviews
+            #unique_reviews = []
+            #for review in reviews:
+            #    is_duplicate = False
+            #    for unique_review in unique_reviews:
+            #        if jaccard_similarity(review, unique_review) > similarity_threshold:
+            #            is_duplicate = True
+            #            break
+            #    if not is_duplicate:
+            #        unique_reviews.append(review)
+            return reviews
         except Exception as e:
             print("error", e)
-            return unique_reviews
+            return reviews
     def click_opinion_page(self, page):
         try:
             # ✅ 첫 번째 선택자 검사 (수정됨: CSS Selector로 변경)

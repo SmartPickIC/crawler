@@ -85,7 +85,7 @@ class YouTubelistManager(ProductListManager):
         self.backup_counter += 1
         backup_filename = os.path.join(
             self.backup_dir, 
-            f'youtube_metadata_backup_{self.backup_counter}.pkl'
+            f'product_lists_backup_{self.backup_counter}.pkl'
         )
         
         # Save to pickle file
@@ -119,10 +119,10 @@ class YouTubelistManager(ProductListManager):
                 return False
                 
             # 모든 데이터 수집
-            all_data = []
+ 
             backup_files = sorted([
                 f for f in os.listdir(self.backup_dir)
-                if f.startswith('youtube_metadata_backup_') and f.endswith('.pkl')
+                if f.startswith('product_lists_backup_') and f.endswith('.pkl')
             ])
             
             # 청크 단위로 읽고 쓰기

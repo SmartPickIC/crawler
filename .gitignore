@@ -2,3 +2,5 @@
 /output
 /data
 /__pycache__
+my-crawler.tar
+*.deb
