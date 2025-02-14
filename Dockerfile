@@ -25,6 +25,7 @@ RUN dpkg -i /tmp/google-chrome-stable_current_amd64.deb || apt-get -fy install
 # 6. Python 패키지 설치 (requirements.txt에 Streamlit, Selenium 등 포함)
 COPY requirements.txt .
 COPY danawa.py .
+COPY controller.py .
 COPY YTE.py .
 RUN pip install --no-cache-dir -r requirements.txt
 
