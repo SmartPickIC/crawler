@@ -39,7 +39,7 @@ if use_danawa:
             help="크롤링할 다나와 카테고리 페이지의 URL을 입력하세요"
         )
         start_page = st.number_input("시작 페이지:", min_value=1, value=1, step=1)
-        end_page = st.number_input("종료 페이지:", min_value=1, value=11, step=1)
+        end_page = st.number_input("종료 페이지:", min_value=1, value=100, step=1)
 
     with col2:
         output_base = st.text_input("기본 출력 경로:", value="output", help="기본 출력 폴더명을 지정하세요")
@@ -64,10 +64,24 @@ if use_danawa:
         st.warning("⚠️ 현재 크롤링 실행 중...")
     else:
         st.success("✅ 크롤링이 실행되지 않은 상태입니다.")
+    if st.button("설정 적용"):
+        if not st.session_state.controller.is_thread_running():
+            st.session_state.controller = Danawacontroller(
+                url=danawa_base_link,
+                start=start_page,
+                end=end_page,
+                output=output_base,
+                limiter=limiter,
+                reviewfactor=review_factor
+            )
+            st.success("✅ 설정이 적용되었습니다.")
+        else:
+            st.warning("⚠️ 크롤링이 실행 중일 때는 설정을 변경할 수 없습니다.")
 
     # 크롤링 실행 버튼
     if st.button("다나와 크롤링 실행", type="primary", disabled=controller.is_thread_running()):
         st.session_state.start_time = datetime.now()
+
         controller.run_threaded_danawa()
         st.success("🚀 크롤링을 시작했습니다.")
 
@@ -101,6 +115,8 @@ if use_danawa:
         if st.button("제품 추가"):
             if new_product:
                 controller.add_product(new_product)
+                products_df = controller.get_products()
+                st.dataframe(products_df)
                 st.rerun()
 
     with tab2:
@@ -112,6 +128,8 @@ if use_danawa:
         if st.button("단어 추가"):
             if new_blacklist:
                 controller.add_to_blacklist(new_blacklist)
+                blacklist_df = pd.DataFrame(controller.clean_item.blacklist, columns=['블랙리스트 단어'])
+                st.dataframe(blacklist_df)
                 st.rerun()
 
     with tab3:
@@ -123,6 +141,8 @@ if use_danawa:
         if st.button("키워드 추가"):
             if new_keyword:
                 controller.add_to_product_list(new_keyword)
+                keywords_df = pd.DataFrame(controller.clean_item.product_keywords, columns=['키워드'])
+                st.dataframe(keywords_df)
                 st.rerun()
 
 # --- 로그 확인 ---

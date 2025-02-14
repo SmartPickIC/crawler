@@ -338,7 +338,12 @@ class ProductListManager:
             # 최종 파일 저장
             with open(output_path, 'wb') as f:
                 pickle.dump(all_data, f)
-            
+            try:
+                for backup_file in backup_files:
+                    os.remove(os.path.join(self.backup_dir, backup_file))
+                print(f"✅ 백업된 {len(backup_files)}개 파일을 성공적으로 삭제했습니다.")
+            except Exception as e:
+                print(f"⚠️ 백업 파일 삭제 중 오류 발생: {str(e)}")
             return True
             
         except Exception as e:
