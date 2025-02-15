@@ -218,7 +218,19 @@ def save_captions(link,search_query,i,save_path):
                 f.write(srt_captions)
             print(f"자막이 '{filename}' 파일로 저장되었습니다.")
         else:
-            print("입력한 언어 코드에 해당하는 자막이 존재하지 않습니다.")
+            language_code = "ko"
+            # 해당 언어의 자막 객체 가져오기
+            caption = yt.captions.get(language_code)
+            if caption:
+                # SRT 형식으로 자막 생성
+                srt_captions = caption.generate_srt_captions()
+                # 파일로 저장 (파일 이름은 영상 제목과 언어 코드 사용)
+                filename = os.path.join(save_path, f"{i}.srt")
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write(srt_captions)
+                print(f"자막이 '{filename}' 파일로 저장되었습니다.")
+            else:
+                print("입력한 언어 코드에 해당하는 자막이 존재하지 않습니다.")
         lines = srt_captions.splitlines()
         text_lines = []
         for line in lines:
@@ -284,6 +296,11 @@ def get_metadata(link):
                     return combined_text
                 else:
                     continue
+            loop_num+=1
+            time.sleep(1)
+            if loop_num>loop_max:
+                print("fail click expand")
+                
         except:
             loop_num+=1
             time.sleep(1)
@@ -312,7 +329,7 @@ def automatic_retry(selector, driver, by=By.CSS_SELECTOR, attempts=10):
                 loop=False
                 return False
 
-def save_script(driver,search_query,save_path,flag_file_path,data):
+def save_script(driver,search_query,save_path,flag_file_path,data,maxnum):
     # ✅ 부모 요소 (`ytd-rich-item-renderer:nth-child(2)`) 찾기
     i=1
     scrol=0 
@@ -348,6 +365,8 @@ def save_script(driver,search_query,save_path,flag_file_path,data):
             save_captions(video_url,search_query,i,save_path)
             i+=1
             scrol=0
+            if i>maxnum:
+                break
             with open(flag_file_path, 'r') as f:
                 flag = f.readline()
             if flag.strip() != "1":
@@ -363,8 +382,9 @@ def save_script(driver,search_query,save_path,flag_file_path,data):
             if scrol>3:
                 break
        
-def run(search_query,save_base,base_dir):
+def run(search_query,save_base,base_dir,maxnum):
     folder_path=search_query
+    maxnum=maxnum
     save_path = os.path.join(base_dir, save_base, folder_path)
     os.makedirs(save_path, exist_ok=True)
     log_file = os.path.join(save_path, f"{search_query}.txt")
@@ -412,7 +432,7 @@ def run(search_query,save_base,base_dir):
     os.makedirs(save_path, exist_ok=True)
     log_file = os.path.join(save_path, f"{search_query}.txt")
     sys.stdout = Logger(log_file)
-    save_script(driver,search_query,save_path,flag_file_path,data)
+    save_script(driver,search_query,save_path,flag_file_path,data,maxnum)
     driver.quit() 
     murged_pickle=str(pickle_path) + "/" + str(hashed_filename) + ".pickle"
     csv_file = str(csv_path) + "/" + str(hashed_filename) + ".csv"

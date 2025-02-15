@@ -9,7 +9,8 @@ import YTE as yt
 from pathlib import Path
 import time
 class YTcontroller:
-    def __init__(self,save_base="output/youtube"):
+    def __init__(self,maxnum,save_base="output/youtube"):
+        self.maxnum=maxnum
         self.status = "Idle"
         self.save_base = save_base
         self.thread = None
@@ -50,14 +51,16 @@ class YTcontroller:
         self.status = "Running"
         for search_query in self.search_querys:
             print(f"✅ 크롤링 유튜버 : {search_query}")
-            yt.run(search_query, self.save_base,self.base_dir)
+            yt.run(search_query, self.save_base,self.base_dir,self.maxnum)
             with open(self.flag_file_path, "r") as f:
                 flag = f.read().strip()
             if flag != "1":
                 print("⛔ 크롤링 중지 요청됨")
                 self.status = "Idle"
+                print("✅ 크롤링이 정상적으로 종료됨.")
                 return True
         self.status = "Idle"
+        print("✅ 크롤링이 정상적으로 종료됨.")
         return True
     
 
@@ -103,6 +106,7 @@ class Danawacontroller:
 
     def run_danawa(self):
         result=run(self.clean_item,self.url,start=self.start,end=self.end,output=self.output,limiter=self.limiter,reviewfactor_in=self.reviewfactor)
+        print("✅ 크롤링이 정상적으로 종료됨.")
         return result
     def run_threaded_danawa(self):
         """ ✅ 멀티스레드로 크롤링 실행 """

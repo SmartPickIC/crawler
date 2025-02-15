@@ -28,13 +28,16 @@ if use_youtube:
     st.subheader("유튜브 크롤링")
     
     save_base = st.text_input("저장 폴더:", value="output/youtube", help="유튜브 크롤링 데이터 저장 폴더", disabled=is_youtube_running)
-
+    maxnum = st.number_input("최대 크롤링 수:", min_value=1, value=100, step=1, help="유튜버당 크롤링할 최대 동영상 수", disabled=is_youtube_running)
     # ✅ 유튜브 컨트롤러 인스턴스 생성
     if "youtube_controller" not in st.session_state:
-        st.session_state.youtube_controller = YTcontroller(save_base=save_base)
-
+        st.session_state.youtube_controller = YTcontroller(maxnum,save_base=save_base)
     youtube_controller = st.session_state.youtube_controller
-
+    
+    if st.button("activation",type="primary",disabled=is_youtube_running or is_danawa_running):
+        st.session_state.youtube_controller = YTcontroller(maxnum,save_base=save_base)
+        youtube_controller = st.session_state.youtube_controller
+    
     # ✅ 크롤링 실행 버튼 (다나와 실행 중이면 비활성화)
     if st.button("유튜브 크롤링 실행", type="primary", disabled=is_youtube_running or is_danawa_running):
         state_manager.start_youtube()  # ✅ 버튼 누르는 순간 즉시 상태 변경
@@ -85,6 +88,16 @@ if use_danawa:
         )
 
     controller = st.session_state.controller  # 컨트롤러 인스턴스 가져오기
+    if st.button("activation",type="primary",disabled=is_youtube_running or is_danawa_running):
+        st.session_state.controller = Danawacontroller(
+            url=danawa_base_link,
+            start=start_page,
+            end=end_page,
+            output=output_base,
+            limiter=limiter,
+            reviewfactor=review_factor
+        )
+        controller = st.session_state.controller
 
     # ✅ 크롤링 실행 버튼 (유튜브 실행 중이면 비활성화)
     if st.button("다나와 크롤링 실행", type="primary", disabled=is_danawa_running or is_youtube_running):
@@ -102,7 +115,7 @@ if use_danawa:
             st.session_state.state_manager.rerun_state=1
             st.rerun()  # ✅ 데이터프레임 갱신
 
-    tab1, tab2, tab3 = st.tabs(["제품 목록", "블랙리스트", "제품 키워드"])
+    tab1, tab2, tab3, tab4  = st.tabs(["제품 목록", "블랙리스트", "제품 키워드", "정규표현식 패턴"])
 
     # --- 제품 목록 ---
     with tab1:
@@ -178,6 +191,84 @@ if use_danawa:
                 st.rerun()  # ✅ 데이터프레임 갱신
         else:
             st.warning("❌ 제거할 키워드가 없습니다.")
+            
+
+
+    # --- 정규표현식 패턴 관리 ---
+    with tab4:
+        st.write("🔍 정규표현식 패턴 관리")
+
+        # ✅ 기존 패턴 불러오기
+        regex_patterns = {
+            "release_year": controller.clean_item.regex_release_year.pattern,
+            "model_number": controller.clean_item.regex_model_number.pattern
+        }
+
+        # ✅ 기존 패턴 표시
+        st.write("📅 출시연도 패턴:")
+        year_patterns = regex_patterns["release_year"].strip("^$()").split("|")
+        year_df = pd.DataFrame({"패턴": year_patterns})
+        st.dataframe(year_df)
+
+        st.write("🔢 모델번호 패턴:")
+        model_patterns = regex_patterns["model_number"].strip("^$()").split("|")
+        model_df = pd.DataFrame({"패턴": model_patterns})
+        st.dataframe(model_df)
+
+        # ✅ 패턴 추가 기능
+        pattern_type = st.selectbox("패턴 종류 선택", ["출시연도", "모델번호"])
+        new_pattern = st.text_input("새 패턴 입력")
+
+        if st.button("패턴 추가"):
+            if new_pattern:
+                current_patterns = year_patterns if pattern_type == "출시연도" else model_patterns
+                if new_pattern not in current_patterns:
+                    current_patterns.append(new_pattern)
+                    
+                    if pattern_type == "출시연도":
+                        regex_patterns["release_year"] = "^(" + "|".join(current_patterns) + ")$"
+                    else:
+                        regex_patterns["model_number"] = "^(" + "|".join(current_patterns) + ")$"
+
+                    # ✅ 파일 저장
+                    with open("regex_patterns.txt", "w", encoding="utf-8") as f:
+                        for key, pattern in regex_patterns.items():
+                            f.write(f"{key}:{pattern}\n")
+
+                    controller.clean_item.load_regex_patterns()  # ✅ 패턴 로드
+                    st.success("✅ 패턴이 추가되었습니다.")
+                    st.session_state.state_manager.rerun_state = 1
+                    st.rerun()
+
+        # ✅ 패턴 제거 기능
+        st.write("🗑️ 패턴 제거")
+        
+        current_patterns = year_patterns if pattern_type == "출시연도" else model_patterns
+        if current_patterns:
+            pattern_to_remove = st.selectbox("제거할 패턴 선택", current_patterns)
+
+            if st.button("패턴 제거"):
+                if pattern_to_remove:
+                    current_patterns.remove(pattern_to_remove)
+
+                    if pattern_type == "출시연도":
+                        regex_patterns["release_year"] = "^(" + "|".join(current_patterns) + ")$"
+                    else:
+                        regex_patterns["model_number"] = "^(" + "|".join(current_patterns) + ")$"
+
+                    # ✅ 파일 저장
+                    with open("regex_patterns.txt", "w", encoding="utf-8") as f:
+                        for key, pattern in regex_patterns.items():
+                            f.write(f"{key}:{pattern}\n")
+
+                    controller.clean_item.load_regex_patterns()  # ✅ 패턴 로드
+                    st.success("✅ 패턴이 제거되었습니다.")
+                    st.session_state.state_manager.rerun_state = 1
+                    st.rerun()
+        else:
+            st.warning("❌ 제거할 패턴이 없습니다.")
+            
+            
 if st.session_state.state_manager.rerun_state<4:
     st.session_state.state_manager.rerun_state += 1
     time.sleep(0.1)

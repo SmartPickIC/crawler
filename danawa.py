@@ -1231,8 +1231,7 @@ def click_page(page,driver,timeout=10):
 def get_data_from_url_single(url,num,save_dir_image,fail,limiter,reviewfactor,clean_item):
     index_i=0
     options = Options()
-    
-    options.add_argument('--headless')      
+    options.add_argument('--headless')
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     driver = webdriver.Chrome(service = Service(),options=options)
@@ -1409,8 +1408,11 @@ def extract_name(manager, fname="output/danawa.csv"):
     
     # ProductListManager의 경우 전체 데이터를 가져오기
     data = manager.get_all_data() if hasattr(manager, 'get_all_data') else manager
-    
+
     for d in data:
+        if d and d[0] == 'get fail':  # ✅ 리스트가 비어있지 않은 경우에만 검사
+            print("❌ 데이터 추출 실패: get fail")
+            return
         if not (d[0] == 'get fail'):
             for i in d:
                 if isinstance(i, bytes):
@@ -1432,7 +1434,7 @@ def get_data_from_url_loop(url,start,end,clean_item,product_lists,save_dir_image
     for future in tqdm.tqdm(futures, total=end - start + 1):
         page = future
         try:
-            data,fail=get_data_from_url_single(url,page,save_dir_image,fail,limiter,reviewfactor,clean_item) 
+            data,fail=get_data_from_url_single(url,page,save_dir_image,fail,limiter,reviewfactor,clean_item)
             product_lists.append(data)
             R=None
             with open('output/flag.txt', 'r') as f:
