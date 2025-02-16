@@ -43,8 +43,12 @@ def export_pickle_to_csv(pickle_file, output_dir):
             data = pickle.load(f)
         rows=[]
         for i in range(len(data)):
-            row=[ data[i].get("title"),data[i].get("view"),data[i].get("upload_date"),data[i].get("link"),data[i].get("explain")]
-            rows.append(row)
+            if isinstance(data[i], dict):
+                row=[ data[i].get("title"),data[i].get("view"),data[i].get("upload_date"),data[i].get("link"),data[i].get("explain")]
+                rows.append(row)
+            else:
+                row=[ "get fail","get fail","get fail","get fail","get fail"]
+                rows.append(row)
         output=pd.DataFrame(rows,columns=["제목", "조회수","업로드일","링크","설명"])
         output.to_csv(output_dir, encoding="utf-8")
         return True
@@ -201,7 +205,7 @@ def save_captions(link,search_query,i,save_path):
     #link = input("자막을 다운로드할 영상 링크를 입력하세요: ")
     yt = YouTube(link)
     filename = f"{i}.mp3"
-    download_path = yt.streams.filter(only_audio=True).first().download(output_path=save_path, filename=filename)
+    #download_path = yt.streams.filter(only_audio=True).first().download(output_path=save_path, filename=filename)
     # 사용 가능한 자막 목록 출력
     # 원하는 자막 언어 코드 입력 (예: 'en' 또는 'ko')
     #language_code = input("다운로드할 자막의 언어 코드를 입력하세요 (예: en, ko): ")
@@ -231,24 +235,24 @@ def save_captions(link,search_query,i,save_path):
                 print(f"자막이 '{filename}' 파일로 저장되었습니다.")
             else:
                 print("입력한 언어 코드에 해당하는 자막이 존재하지 않습니다.")
-        lines = srt_captions.splitlines()
-        text_lines = []
-        for line in lines:
-            # 순수 숫자(번호)만 있는 줄은 건너뜁니다.
-            if re.match(r'^\d+$', line):
-                continue
-            # 타임스탬프 형식 (예: 00:00:01,000 --> 00:00:04,000)인 줄은 건너뜁니다.
-            if re.match(r'^\d{2}:\d{2}:\d{2}', line):
-                continue
-            # 빈 줄도 건너뜁니다.
-            if line.strip() == "":
-                continue
-            # 나머지 자막 텍스트 라인만 추가
-            text_lines.append(line)
-            txt_captions = "\n".join(text_lines)
-            filename_txt = os.path.join(save_path, f"{i}.txt")
-            with open(filename_txt, "w", encoding="utf-8") as f:
-                f.write(txt_captions)    
+        #lines = srt_captions.splitlines()
+        #text_lines = []
+        #for line in lines:
+        #    # 순수 숫자(번호)만 있는 줄은 건너뜁니다.
+        #    if re.match(r'^\d+$', line):
+        #        continue
+        #    # 타임스탬프 형식 (예: 00:00:01,000 --> 00:00:04,000)인 줄은 건너뜁니다.
+        #    if re.match(r'^\d{2}:\d{2}:\d{2}', line):
+        #        continue
+        #    # 빈 줄도 건너뜁니다.
+        #    if line.strip() == "":
+        #        continue
+        #    # 나머지 자막 텍스트 라인만 추가
+        #    text_lines.append(line)
+        #    txt_captions = "\n".join(text_lines)
+        #    filename_txt = os.path.join(save_path, f"{i}.txt")
+        #    with open(filename_txt, "w", encoding="utf-8") as f:
+        #        f.write(txt_captions)    
     except:
         print("자막이 없습니다.")
 
@@ -443,5 +447,6 @@ def run(search_query,save_base,base_dir,maxnum):
 if __name__ == "__main__":
     save_base="output/youtube"
     search_query="디에이트"
-    run(search_query,save_base)
+    base_dir = os.getcwd()
+    run(search_query,save_base,base_dir,10)
     print("정상 종료")

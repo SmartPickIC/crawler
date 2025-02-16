@@ -28,7 +28,7 @@ if use_youtube:
     st.subheader("유튜브 크롤링")
     
     save_base = st.text_input("저장 폴더:", value="output/youtube", help="유튜브 크롤링 데이터 저장 폴더", disabled=is_youtube_running)
-    maxnum = st.number_input("최대 크롤링 수:", min_value=1, value=100, step=1, help="유튜버당 크롤링할 최대 동영상 수", disabled=is_youtube_running)
+    maxnum = st.number_input("최대 크롤링 수:", min_value=1, value=300, step=1, help="유튜버당 크롤링할 최대 동영상 수", disabled=is_youtube_running)
     # ✅ 유튜브 컨트롤러 인스턴스 생성
     if "youtube_controller" not in st.session_state:
         st.session_state.youtube_controller = YTcontroller(maxnum,save_base=save_base)
