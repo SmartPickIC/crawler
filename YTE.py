@@ -304,12 +304,14 @@ def get_metadata(link):
             time.sleep(1)
             if loop_num>loop_max:
                 print("fail click expand")
+                return False
                 
         except:
             loop_num+=1
             time.sleep(1)
             if loop_num>loop_max:
                 print("fail click expand")
+                return False
     driver.quit()
 
    
