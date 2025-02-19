@@ -1,5 +1,6 @@
-from YTE import export_pickle_to_csv
+from YTE import export_pickle_to_csv, YouTubelistManager
 
 
-
-export_pickle_to_csv("cd07f60c6d33f6a58036b55548cf63e85be6e7cfaa59f33adf20ac5261c20f72.pickle","result.csv")
+#A= YouTubelistManager(backup_dir="./backupaa02f8a164723f6000cf059ac9164e2ebd70743334229b7704d70586bc9c79ef")
+#A.merge_and_save_you("result.pickle")
+export_pickle_to_csv("result.pickle","result.csv")

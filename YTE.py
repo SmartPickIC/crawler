@@ -367,6 +367,7 @@ def save_script(driver,search_query,save_path,flag_file_path,data,maxnum):
             video_url = video_link_element.get_attribute("href")
             loopdata["link"]=video_url
             loopdata["explain"]=get_metadata(video_url)
+            loopdata["loopindex"]=f'{i}'
             print(f"✅ 추출한 링크: {video_url}")
             save_captions(video_url,search_query,i,save_path)
             i+=1

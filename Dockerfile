@@ -37,4 +37,4 @@ COPY app.py .
 RUN mkdir -p /output
 
 # 9. 스트림릿 앱 실행 (외부 접속 가능하도록 address 지정)
-CMD ["python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["python","-u", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
